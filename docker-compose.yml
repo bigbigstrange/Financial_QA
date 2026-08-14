@@ -1,0 +1,69 @@
+# 企业可落地编排：
+# 1) financial-qa-batch：一次性批量出答案（竞赛/离线）
+# 2) financial-qa-api：常驻平台 API（鉴权/会话/评测/内存防护）
+services:
+  financial-qa-batch:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: financial-qa:latest
+    profiles: ["batch"]
+    environment:
+      MMD_PATH: /app/output/knowledge_base.json
+      CACHE_DIR: /app/vector_cache
+      IMAGE_BACKEND: ${IMAGE_BACKEND:-visrag}
+      ENABLE_GRAPH: ${ENABLE_GRAPH:-false}
+      FINANCE_WEB_DEMO: ${FINANCE_WEB_DEMO:-1}
+      FINANCE_MAX_BLOCKS: ${FINANCE_MAX_BLOCKS:-8000}
+      FINANCE_SKIP_IMAGE: ${FINANCE_SKIP_IMAGE:-1}
+    volumes:
+      - ./output:/app/output
+      - ./test:/app/test:ro
+      - qa_vector_cache:/app/vector_cache
+    command: ["python", "main.py"]
+    restart: "no"
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 2G
+
+  financial-qa-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: financial-qa:latest
+    environment:
+      MMD_PATH: /app/output/knowledge_base.json
+      CACHE_DIR: /app/vector_cache
+      IMAGE_BACKEND: ${IMAGE_BACKEND:-visrag}
+      ENABLE_GRAPH: ${ENABLE_GRAPH:-false}
+      FINANCE_WEB_DEMO: ${FINANCE_WEB_DEMO:-1}
+      FINANCE_MAX_BLOCKS: ${FINANCE_MAX_BLOCKS:-8000}
+      FINANCE_SKIP_IMAGE: ${FINANCE_SKIP_IMAGE:-1}
+      FINANCE_EMBED_BATCH_SIZE: ${FINANCE_EMBED_BATCH_SIZE:-8}
+      MEM_HARD_PCT: ${MEM_HARD_PCT:-92}
+      MEM_SOFT_PCT: ${MEM_SOFT_PCT:-85}
+      MAX_CONCURRENT_INFER: ${MAX_CONCURRENT_INFER:-1}
+      GEN_IDLE_UNLOAD_SEC: ${GEN_IDLE_UNLOAD_SEC:-600}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      HOST: 0.0.0.0
+      PORT: 8000
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ./output:/app/output
+      - ./test:/app/test:ro
+      - ./configs:/app/configs
+      - qa_vector_cache:/app/vector_cache
+      - qa_app_data:/app/data_runtime
+    command: ["python", "-m", "app.main"]
+    restart: unless-stopped
+    # 内存上限：容器级硬闸，配合应用内 MemoryGuard 双保险防 OOM Kill 雪崩
+    mem_limit: ${API_MEM_LIMIT:-6g}
+    memswap_limit: ${API_MEM_LIMIT:-6g}
+
+volumes:
+  qa_vector_cache:
+  qa_app_data:

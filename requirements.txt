@@ -1,0 +1,70 @@
+﻿# deep learning
+torch==2.1.0
+torchvision==0.16.0
+transformers==4.46.3
+tokenizers==0.20.3
+sentence-transformers==5.1.2
+
+# document parsing
+PyMuPDF==1.23.8
+pdfplumber==0.10.3
+python-docx==1.1.0
+python-pptx==0.6.22
+openpyxl==3.1.2
+xlrd==2.0.1
+striprtf==0.0.26
+pywin32==312
+pandas==2.1.4
+img2pdf==0.5.1
+Pillow==9.5.0
+
+# vector search
+faiss-cpu==1.7.4
+ijson==3.2.3
+
+# OCR (needs system tesseract binary)
+pytesseract==0.3.10
+opencv-python==4.8.1.78
+
+# NLP / numeric
+jieba==0.42.1
+nltk==3.8.1
+scikit-learn==1.3.2
+numpy==1.26.3
+scipy==1.11.4
+requests==2.31.0
+tqdm==4.66.1
+
+# utils
+einops==0.7.0
+easydict==1.10
+addict==2.4.0
+accelerate==0.34.2
+
+# plotting
+matplotlib==3.8.2
+seaborn==0.13.0
+
+# metrics
+prometheus-client==0.20.0
+
+# web / enterprise platform API
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+sqlalchemy==2.0.36
+pydantic-settings==2.6.1
+email-validator==2.2.0
+python-jose[cryptography]==3.3.0
+bcrypt==4.2.1
+psutil==6.1.0
+httpx==0.28.1
+
+# knowledge graph (optional)
+neo4j==5.13.0
+py2neo==2021.2.4
+
+# optional GPU packages (install manually if needed)
+# vllm==0.2.2
+# flash-attn==2.3.2
+# triton==2.1.0
+# xformers==0.0.22

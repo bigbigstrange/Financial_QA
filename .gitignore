@@ -1,0 +1,25 @@
+.env
+.env.*
+!.env.example
+data_app.db
+__pycache__/
+*.pyc
+.pytest_cache/
+.conda/
+vector_cache/
+frontend/node_modules/
+frontend/dist/
+*.log
+.DS_Store
+
+# 原始语料与解析产物体积过大，不入库（本地自行准备）
+data/documents/**
+!data/documents/.gitkeep
+output/**
+!output/.gitkeep
+
+# 本地 IDE / 系统
+.vscode/
+.idea/
+*.bak
+*.bak_*

@@ -1,0 +1,30 @@
+{
+  "active_profile": "stable-v1",
+  "profiles": {
+    "stable-v1": {
+      "label": "生产稳定版",
+      "embed_model": null,
+      "reranker_model": null,
+      "gen_model": null,
+      "image_backend": "visrag",
+      "enable_graph": false,
+      "notes": "默认走 model_settings 本地解析；null 表示使用环境变量/本地目录解析结果"
+    },
+    "candidate-v2": {
+      "label": "候选迭代版",
+      "embed_model": null,
+      "reranker_model": null,
+      "gen_model": null,
+      "image_backend": "visrag",
+      "enable_graph": false,
+      "notes": "切换前须跑 eval_gate，通过门禁后 promote"
+    }
+  },
+  "gates": {
+    "min_success_rate": 0.75,
+    "max_avg_latency_sec": 45.0,
+    "min_avg_confidence": 0.35,
+    "min_evidence_coverage": 0.7
+  },
+  "history": []
+}
