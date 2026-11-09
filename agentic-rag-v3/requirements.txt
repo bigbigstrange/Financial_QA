@@ -1,0 +1,18 @@
+# Agentic RAG dependencies
+beautifulsoup4
+langchain-community
+tiktoken
+langchainhub
+langchain
+langgraph
+tavily-python
+langchain-openai
+python-dotenv
+pytest
+langchain-chroma
+langchain-tavily>=0.1.5
+langchain-huggingface
+sentence-transformers
+fastapi
+uvicorn
+chromadb

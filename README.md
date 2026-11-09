@@ -216,6 +216,42 @@ GitHub Actions API 生成，**不是截图**，所以不会过期。
 
 ---
 
+## 两个实现对照
+
+仓库里有两个 Agentic RAG 实现，**故意放在一起**：
+
+| | `agentic-rag-v3/`（最小实现） | 根目录（生产平台） |
+|---|---|---|
+| 目的 | 把「路由 → 评分 → 双校验 → 重试/拒答」讲清楚 | 把这套编排跑在真实业务语料上 |
+| 检索 | Chroma 单塔 | 文本 / BM25 / 结构 / 页图 四通道 + RRF |
+| 文档层 | 直接切块 | DocIR（版本 / 原文块 / 物理页 / 页图） |
+| 规模 | 5 段示例语料，7 条测试 | 30,406 切块，490 条测试 |
+| 依赖 | langgraph + langchain + chroma | + faiss / torch / BGE-M3 / CLIP / FastAPI / Vue |
+
+详见 [agentic-rag-v3/README.md](agentic-rag-v3/README.md)。
+
+---
+
+## 可观测（可选）
+
+```bash
+# 把一次 run 的 trace 转成 Langfuse ingestion 格式（默认 dry-run）
+python scripts/export_langfuse.py --trace trace.json --dry-run
+
+# 配好 LANGFUSE_HOST / LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY 后实际发送
+python scripts/export_langfuse.py --trace trace.json
+```
+
+不依赖 Langfuse 也能跑：仓库自带 `docs/evidence/trace.png` 与 `/api/runs/{id}/trace` 接口。
+
+---
+
+## 演示视频
+
+录制脚本（分镜 + 旁白 + 剪辑清单）见 [docs/demo-script.md](docs/demo-script.md)。
+
+---
+
 ## 目录结构
 
 ```text
@@ -228,6 +264,7 @@ Financial_QA/
 ├── frontend/           # Vue3：登录、问答、轨迹、原文原图、取消与运维
 ├── demo/corpus/        # 演示用示例语料（虚构条款，非真实业务数据）
 ├── mcp_server/         # MCP Server：检索 / 问答 / 证据 三个工具（stdio）
+├── agentic-rag-v3/     # 对照实现：最小可读的 Adaptive RAG + 自纠正（7 条测试）
 ├── eval/               # 评测集 + 结果（metrics.json / report.md）
 ├── tests/              # pytest：单测 + 真实 HTTP 验收
 ├── scripts/            # 数据处理、评测、备份、回归

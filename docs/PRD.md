@@ -1,4 +1,4 @@
-# Financial QA 项目可信度改造 PRD
+﻿# Financial QA 项目可信度改造 PRD
 
 > 面向 Agent 岗求职的「可部署 / 可演示 / 可验证」项目改造方案
 
@@ -370,10 +370,10 @@ jobs:
 | P1-1 | 评测体系 | 🟡 | 示例语料 23 题（Recall@3 94.7% / 拒答 100%）；新增**题库级运行指标** harness（500 题题库）；**准确率仍缺人工标注** |
 | P1-2 | 迭代上限与超时 | ✅ | 在 Agentic RAG v3 落地：`MAX_ITERATIONS=2`（状态计数）、`graph/runtime.py` 墙钟超时、显式 `recursion_limit`；新增 4 条测试 |
 | P1-3 | 过程证据包 | ✅ | 5 类齐全：架构图 / 评测图 / 终端 GIF / **真实节点时序图** / **CI 状态卡**（后两者由脚本读真实数据生成） |
-| P2-1 | 可观测 | ⬜ | 未接 Langfuse，`/ops` 未补 trace 下钻 |
+| P2-1 | 可观测 | 🟡 | 新增 `scripts/export_langfuse.py`（trace → Langfuse ingestion，dry-run 通过）；未接真实 Langfuse 实例 |
 | P2-2 | MCP server | ✅ | 4 个 tool，stdio 实测握手通过，7 条契约测试 |
-| P2-3 | Agentic RAG v3 独立化 | ⬜ | 未换领域语料、未补 20 题评测、未发布为独立仓库 |
-| P3-1 | 演示视频 | ⬜ | 未录制 |
+| P2-3 | Agentic RAG v3 并入仓库 | ✅ | `agentic-rag-v3/` 子目录：可读实现 + 7 条测试 + 与生产平台对照表；未单独发布仓库 |
+| P3-1 | 演示视频 | 🟡 | `docs/demo-script.md`：分镜表 + 旁白 + 剪辑清单；未录制 |
 | P3-2 | 技术文章 | ⬜ | 未撰写 |
 
 ### 验收清单（DoD）对照
@@ -397,3 +397,4 @@ jobs:
 3. **P2-1 可观测** / **P2-3 v3 独立化**
 4. **P3** 视频与文章
 5. 若拿到人工标注的 50 题，再补"准确率"评测
+
