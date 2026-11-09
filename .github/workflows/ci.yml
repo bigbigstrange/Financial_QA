@@ -65,11 +65,14 @@ jobs:
       - name: Annotate failures
         if: steps.pytest.outcome == 'failure'
         run: |
-          grep -E "^(FAILED|ERROR)" pytest.log | head -20 | while IFS= read -r line; do
+          grep -E "^(FAILED|ERROR)" pytest.log | head -10 | while IFS= read -r line; do
             echo "::error title=pytest::$line"
           done
-          echo "---- last 25 lines ----"
-          tail -25 pytest.log
+          echo "---- traceback context ----"
+          sed -n '/=* ERRORS *=*/,/short test summary/p' pytest.log | head -45 | while IFS= read -r line; do
+            echo "::error title=pytest-trace::$line"
+          done
+          tail -20 pytest.log
 
       - name: Fail job on test failure
         if: steps.pytest.outcome == 'failure'
@@ -94,4 +97,5 @@ jobs:
       - name: Build
         working-directory: frontend
         run: npm run build
+
 
