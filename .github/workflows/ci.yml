@@ -50,7 +50,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest
+          pip install pytest pytest-cov
 
       - name: Run tests
         id: pytest
@@ -60,7 +60,18 @@ jobs:
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
           set -o pipefail
-          pytest -q --tb=line 2>&1 | tee pytest.log
+          pytest -q --tb=line \
+            --cov=app --cov=src --cov=mcp_server \
+            --cov-report=term --cov-report=xml --cov-fail-under=60 \
+            2>&1 | tee pytest.log
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: ignore
 
       - name: Annotate failures
         if: steps.pytest.outcome == 'failure'

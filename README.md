@@ -1,4 +1,4 @@
-# 金融多模态知识与业务协作 Agent 平台
+﻿# 金融多模态知识与业务协作 Agent 平台
 
 > 面向金融业务文档的多模态检索与问答平台：**从 923 份多格式文档，到一条可溯源、可拒答、可审计的答案。**
 >
@@ -8,6 +8,7 @@
 ![license](https://img.shields.io/badge/license-MIT-blue.svg)
 ![python](https://img.shields.io/badge/python-3.11-3776AB.svg)
 ![tests](https://img.shields.io/badge/tests-490%20passed%20%2F%204%20skipped-brightgreen.svg)
+![coverage](https://img.shields.io/badge/coverage-67%25-brightgreen.svg)
 ![status](https://img.shields.io/badge/status-local%20demo%20verified-orange.svg)
 
 ---
@@ -83,7 +84,7 @@ flowchart TD
 
 | 指标 | 数值 | 出处 |
 |---|---|---|
-| 测试 | **490 passed / 4 skipped / 12 subtests** | `pytest -q`（约 13s） |
+| 测试 | **490 passed / 4 skipped / 12 subtests**，覆盖率 **67%**（CI 门槛 60%） | `pytest -q --cov`（约 19s） |
 | 代码规模 | **221 个 Python 文件**（app 30 / src 46 / tests 81 / scripts 58 / mcp_server 3） | `git ls-files` 口径 |
 | 语料规模 | **920 份**业务文件 → **30,406** 检索切块 → **17,957** 张页图 | `docs/baseline/2026-09-29-delivery-audit.md` |
 | 真实模型评测 | 50 题完成 **43 题**（第 44 题预算耗尽） | `output/quality/financial50-live-v1.json` |
@@ -284,6 +285,7 @@ run、事件、LangGraph 检查点与节点结果持久化；恢复时复用已�
 ## License
 
 MIT © 2026 张艳
+
 
 
 
