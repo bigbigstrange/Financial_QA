@@ -28,6 +28,13 @@
 
 ## 架构
 
+![架构图](docs/evidence/architecture.png)
+
+**四通道各自保留独立分数，不做归一化相加**：视觉相似度和文本相似度不是同一种量纲，直接相加会让"看起来像"压过"内容对"。
+
+<details>
+<summary>Mermaid 源码（可编辑版）</summary>
+
 ```mermaid
 flowchart TD
     A[PDF / Word / Excel / PPT / 图片] --> B[隔离转换 + 本地解析 + OCR]
@@ -50,14 +57,23 @@ flowchart TD
     H -->|有限重试| G
     H -->|证据不足| J[明确拒答]
     I --> K[SSE 轨迹 · 内部核查工单]
-
-    style C fill:#E8EEF7,stroke:#1F3864
-    style F fill:#E8EEF7,stroke:#1F3864
-    style G fill:#E8EEF7,stroke:#1F3864
-    style H fill:#FDE9E9,stroke:#B03A3A
 ```
 
-**四通道各自保留独立分数，不做归一化相加**：视觉相似度和文本相似度不是同一种量纲，直接相加会让"看起来像"压过"内容对"。
+</details>
+
+---
+
+## 效果预览
+
+**零依赖演示（真实运行，非手写）**：两次命中生成引用，一次证据不足明确拒答。
+
+![终端演示](docs/evidence/terminal-demo.gif)
+
+| 问 | 结果 |
+|---|---|
+| 稳盈货币基金A的起购金额是多少？ | 命中 `01_fund#0`（score 0.65）→ 回答 + 引用 |
+| 定期开放产品多久开放一次？ | 命中 `03_wealth#1`（score 0.47）→ 回答 + 引用 |
+| 信用卡年费是多少？ | 最高分 0.00 < 阈值 0.35 → **拒答**，不编 |
 
 ---
 
@@ -125,6 +141,8 @@ python scripts/eval_demo.py
 | 拒答准确率 | **100%**（4/4） | 语料外问题必须明确拒答，不许硬编 |
 | 平均耗时 | 1.68 ms | 纯本地词面检索（无向量库、无大模型） |
 | 数据集 | 23 题（19 事实 / 4 拒答） | `eval/dataset.jsonl` |
+
+![评测结果](docs/evidence/metrics.png)
 
 唯一未命中：**「货币基金保本吗？」** —— 语料原文写的是「不保证本金安全」，词面检索匹配不到「保本」。
 **这正是生产版要接向量检索与重排的原因**，而不是把评测集改到好看。
@@ -220,6 +238,7 @@ run、事件、LangGraph 检查点与节点结果持久化；恢复时复用已�
 ## License
 
 MIT © 2026 张艳
+
 
 
 
