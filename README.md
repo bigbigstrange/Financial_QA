@@ -4,7 +4,7 @@
 >
 > 不是「接个大模型做问答」，而是把 **证据链、幻觉校验、预算熔断、检查点恢复** 做成工程约束。
 
-<!-- CI 徽章在 P0-3 接入 Actions 后启用 -->
+[![ci](https://github.com/bigbigstrange/Financial_QA/actions/workflows/ci.yml/badge.svg)](https://github.com/bigbigstrange/Financial_QA/actions/workflows/ci.yml)
 ![license](https://img.shields.io/badge/license-MIT-blue.svg)
 ![python](https://img.shields.io/badge/python-3.11-3776AB.svg)
 ![tests](https://img.shields.io/badge/tests-483%20passed%20%2F%204%20skipped-brightgreen.svg)
@@ -220,5 +220,6 @@ run、事件、LangGraph 检查点与节点结果持久化；恢复时复用已�
 ## License
 
 MIT © 2026 张艳
+
 
 
