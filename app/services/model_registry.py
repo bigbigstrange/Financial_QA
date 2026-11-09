@@ -10,12 +10,14 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 from app.core.config import get_settings
+from src.contracts import ModelSnapshot
 
 
 class ModelRegistry:
@@ -34,6 +36,13 @@ class ModelRegistry:
             "profiles": {
                 "stable-v1": {
                     "label": "生产稳定版",
+                    "provider": "deepseek",
+                    "requested_model": "deepseek-v4-flash",
+                    "generation_parameters": {"temperature": 0.2, "max_tokens": 1024},
+                    "embedding_model": "BAAI/bge-m3",
+                    "prompt_versions": {"answer": "legacy-v1"},
+                    "retrieval_config": {"top_k": 12},
+                    "parser_config": {"docir": "legacy-v1"},
                     "embed_model": None,
                     "reranker_model": None,
                     "gen_model": None,
@@ -87,6 +96,35 @@ class ModelRegistry:
             out.append(item)
         return out
 
+    def snapshot(
+        self,
+        name: Optional[str] = None,
+        *,
+        evaluation_run_id: Optional[int] = None,
+    ) -> ModelSnapshot:
+        profile = self.get_profile(name)
+        payload = {
+            "profile_name": profile["name"],
+            "provider": str(profile.get("provider") or "local"),
+            "requested_model": profile.get("requested_model") or profile.get("gen_model"),
+            "actual_model": profile.get("actual_model") or profile.get("requested_model") or profile.get("gen_model"),
+            "generation_parameters": dict(profile.get("generation_parameters") or {}),
+            "embedding_model": profile.get("embedding_model") or profile.get("embed_model"),
+            "reranker_model": profile.get("reranker_model"),
+            "prompt_versions": dict(profile.get("prompt_versions") or {}),
+            "retrieval_config": dict(profile.get("retrieval_config") or {}),
+            "parser_config": dict(profile.get("parser_config") or {}),
+            "evaluation_run_id": evaluation_run_id,
+        }
+        canonical = json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        payload["snapshot_id"] = f"sha256:{hashlib.sha256(canonical).hexdigest()}"
+        return ModelSnapshot(**payload)
+
     def gates(self) -> dict[str, float]:
         return dict(self.load().get("gates") or {})
 
@@ -94,7 +132,23 @@ class ModelRegistry:
         data = self.load()
         profiles = data.setdefault("profiles", {})
         cur = dict(profiles.get(name) or {})
-        for k in ("label", "embed_model", "reranker_model", "gen_model", "image_backend", "enable_graph", "notes"):
+        for k in (
+            "label",
+            "provider",
+            "requested_model",
+            "actual_model",
+            "generation_parameters",
+            "embedding_model",
+            "embed_model",
+            "reranker_model",
+            "gen_model",
+            "prompt_versions",
+            "retrieval_config",
+            "parser_config",
+            "image_backend",
+            "enable_graph",
+            "notes",
+        ):
             if k in payload:
                 cur[k] = payload[k]
         profiles[name] = cur
@@ -108,7 +162,20 @@ class ModelRegistry:
             raise KeyError(f"未知 profile: {name}")
         prev = data.get("active_profile")
         if not force and name != prev and eval_run_id is None:
-            raise ValueError("晋级生产必须附带 eval_run_id，或显式 force=true（不推荐）")
+            raise ValueError("晋级生产必须附带通过质量门禁的 eval_run_id")
+        if not force and name != prev:
+            from app.db.session import SessionLocal
+            from app.models import EvalRun
+
+            with SessionLocal() as db:
+                reviewed = db.get(EvalRun, eval_run_id)
+                if (reviewed is None or reviewed.profile_name != name or
+                        reviewed.status != "passed" or reviewed.gate_passed != 1 or
+                        not reviewed.report_path):
+                    raise ValueError("晋级所用评测不存在、未通过或配置不匹配")
+                report = json.loads(Path(reviewed.report_path).read_text(encoding="utf-8"))
+                if report.get("quality_gate_passed") is not True:
+                    raise ValueError("评测缺少人工标准答案与引用质量门禁，不得晋级")
         data["active_profile"] = name
         self._append_history(
             data,

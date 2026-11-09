@@ -87,11 +87,15 @@ class FinancialQASystem:
         )
         self.knowledge_chunks = self.store.blocks
         self.vector_index = self.text_retriever.index
+        visual_stats = getattr(self.image_retriever, "stats", {})
+        if visual_stats.get("backend"):
+            self.image_backend = visual_stats["backend"]
         log_event(
             "index_built",
             chunks=len(self.knowledge_chunks),
             kb_path=self.kb_path,
             image_backend=self.image_backend,
+            indexed_image_pages=visual_stats.get("indexed_pages"),
         )
 
     def search_similar_chunks(self, query: str, top_k: int = 10) -> List[Dict]:

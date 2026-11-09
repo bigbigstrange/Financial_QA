@@ -3,6 +3,26 @@
   "profiles": {
     "stable-v1": {
       "label": "生产稳定版",
+      "provider": "deepseek",
+      "requested_model": "deepseek-v4-flash",
+      "generation_parameters": {
+        "temperature": 0.2,
+        "max_tokens": 1024
+      },
+      "embedding_model": "BAAI/bge-m3",
+      "prompt_versions": {
+        "answer": "legacy-v1"
+      },
+      "retrieval_config": {
+        "top_k": 12,
+        "channels": ["dense", "sparse", "structured"],
+        "recall_per_channel": 24,
+        "fusion_candidates": 30,
+        "final_candidates": 8
+      },
+      "parser_config": {
+        "docir": "legacy-v1"
+      },
       "embed_model": null,
       "reranker_model": null,
       "gen_model": null,
@@ -12,6 +32,26 @@
     },
     "candidate-v2": {
       "label": "候选迭代版",
+      "provider": "deepseek",
+      "requested_model": "deepseek-v4-flash",
+      "generation_parameters": {
+        "temperature": 0.2,
+        "max_tokens": 1024
+      },
+      "embedding_model": "BAAI/bge-m3",
+      "prompt_versions": {
+        "answer": "legacy-v1"
+      },
+      "retrieval_config": {
+        "top_k": 12,
+        "channels": ["dense", "sparse", "structured"],
+        "recall_per_channel": 24,
+        "fusion_candidates": 30,
+        "final_candidates": 8
+      },
+      "parser_config": {
+        "docir": "legacy-v1"
+      },
       "embed_model": null,
       "reranker_model": null,
       "gen_model": null,

@@ -21,6 +21,8 @@ from app.core.config import get_settings
 from app.models import EvalRun
 from app.services.model_registry import model_registry
 from app.services.qa_runtime import qa_runtime
+from scripts.quality_baseline import (DEFAULT_CHUNKS, DEFAULT_MANIFEST,
+                                      DEFAULT_REVIEW, DEFAULT_WORKBOOK, validate)
 
 
 class EvalService:
@@ -42,8 +44,24 @@ class EvalService:
     ) -> EvalRun:
         if self._running:
             raise RuntimeError("已有评测任务在执行")
-        self._running = True
         settings = get_settings()
+        if settings.app_env == "production":
+            raise ValueError("生产评测需独立 Worker；禁止占用在线问答实例")
+        active_profile = model_registry.active_profile_name()
+        if profile_name is not None and profile_name != active_profile:
+            raise ValueError("候选模型须在隔离评测进程运行，禁止重载在线问答实例")
+        # The supplied workbook has questions but no answers. Never spend on a
+        # batch or reload the online runtime before the human gold is ready.
+        if not DEFAULT_REVIEW.is_file():
+            raise ValueError("缺少人工审核基线；先运行 scripts.quality_baseline prepare")
+        quality = validate(DEFAULT_WORKBOOK, DEFAULT_MANIFEST,
+                           DEFAULT_CHUNKS, DEFAULT_REVIEW)
+        if not quality["quality_gate_ready"]:
+            raise ValueError(
+                f"人工金标准未就绪：待审核 {quality['pending_cases']} 题，"
+                f"结构错误 {len(quality['errors'])} 项；禁止付费批量评测或模型晋级"
+            )
+        self._running = True
         profile = profile_name or model_registry.active_profile_name()
         run = EvalRun(profile_name=profile, status="running")
         db.add(run)
@@ -55,8 +73,9 @@ class EvalService:
         report_path = out_dir / f"eval_{run.id}_{uuid.uuid4().hex[:8]}.json"
 
         try:
-            # 切到目标 profile（评测完是否保留由调用方决定；此处评测后若未晋级可 reload active）
-            qa_runtime.reload(profile)
+            # Local development only: use the active instance without changing
+            # its profile. Candidate A/B belongs in a separate worker process.
+            qa_runtime.ensure_loaded(profile)
 
             golden = Path(settings.eval_golden_path)
             if not golden.is_file():
@@ -111,7 +130,12 @@ class EvalService:
                 "avg_confidence": round(conf_sum / n, 4),
                 "evidence_coverage": round(evidence_ok / n, 4),
             }
-            passed, fails = model_registry.check_gates(metrics)
+            _, fails = model_registry.check_gates(metrics)
+            # Operational completion is not factual accuracy. The reviewed
+            # answer-scoring stage must be implemented and independently
+            # accepted before this legacy endpoint may promote a profile.
+            fails.append("尚无逐题事实正确与引用支持的独立评分，禁止晋级")
+            passed = False
             report = {
                 "eval_run_id": run.id,
                 "profile": profile,
@@ -135,15 +159,6 @@ class EvalService:
             run.finished_at = datetime.now(timezone.utc)
             db.commit()
             db.refresh(run)
-
-            if passed and promote_if_pass:
-                model_registry.promote(profile, eval_run_id=run.id)
-                qa_runtime.reload(profile)
-            else:
-                # 评测候选后回到生产 active，避免误伤线上
-                active = model_registry.active_profile_name()
-                if active != profile:
-                    qa_runtime.reload(active)
 
             return run
         except Exception as e:

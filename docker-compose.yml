@@ -1,69 +1,68 @@
-# 企业可落地编排：
-# 1) financial-qa-batch：一次性批量出答案（竞赛/离线）
-# 2) financial-qa-api：常驻平台 API（鉴权/会话/评测/内存防护）
 services:
-  financial-qa-batch:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: financial-qa:latest
-    profiles: ["batch"]
+  db:
+    image: postgres:16-bookworm
     environment:
-      MMD_PATH: /app/output/knowledge_base.json
-      CACHE_DIR: /app/vector_cache
-      IMAGE_BACKEND: ${IMAGE_BACKEND:-visrag}
-      ENABLE_GRAPH: ${ENABLE_GRAPH:-false}
-      FINANCE_WEB_DEMO: ${FINANCE_WEB_DEMO:-1}
-      FINANCE_MAX_BLOCKS: ${FINANCE_MAX_BLOCKS:-8000}
-      FINANCE_SKIP_IMAGE: ${FINANCE_SKIP_IMAGE:-1}
+      POSTGRES_DB: finance
+      POSTGRES_USER: finance
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a unique PostgreSQL password}
     volumes:
-      - ./output:/app/output
-      - ./test:/app/test:ro
-      - qa_vector_cache:/app/vector_cache
-    command: ["python", "main.py"]
-    restart: "no"
-    deploy:
-      resources:
-        limits:
-          memory: 8G
-        reservations:
-          memory: 2G
+      - qa_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finance -d finance"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
 
   financial-qa-api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: financial-qa:latest
+    build: .
+    image: financial-qa:local
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
-      MMD_PATH: /app/output/knowledge_base.json
-      CACHE_DIR: /app/vector_cache
-      IMAGE_BACKEND: ${IMAGE_BACKEND:-visrag}
-      ENABLE_GRAPH: ${ENABLE_GRAPH:-false}
-      FINANCE_WEB_DEMO: ${FINANCE_WEB_DEMO:-1}
-      FINANCE_MAX_BLOCKS: ${FINANCE_MAX_BLOCKS:-8000}
-      FINANCE_SKIP_IMAGE: ${FINANCE_SKIP_IMAGE:-1}
-      FINANCE_EMBED_BATCH_SIZE: ${FINANCE_EMBED_BATCH_SIZE:-8}
-      MEM_HARD_PCT: ${MEM_HARD_PCT:-92}
-      MEM_SOFT_PCT: ${MEM_SOFT_PCT:-85}
-      MAX_CONCURRENT_INFER: ${MAX_CONCURRENT_INFER:-1}
-      GEN_IDLE_UNLOAD_SEC: ${GEN_IDLE_UNLOAD_SEC:-600}
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      APP_ENV: production
       HOST: 0.0.0.0
       PORT: 8000
+      DATABASE_URL: postgresql+psycopg://finance:${POSTGRES_PASSWORD}@db:5432/finance
+      JWT_SECRET: ${JWT_SECRET:?Set a random JWT_SECRET of at least 32 characters}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?Set a distinct admin password of at least 12 characters}
+      CORS_ORIGINS: ""
+      FINANCE_AGENT_MODE: graph
+      FINANCE_DISABLE_PAID_API: ${FINANCE_DISABLE_PAID_API:-1}
+      FINANCE_LLM_PROVIDER: ark
+      ARK_MODEL: doubao-seed-2-1-pro-260915
+      ARK_API_KEY: ${ARK_API_KEY:-}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      FINANCE_WEB_ALLOWED_DOMAINS: ${FINANCE_WEB_ALLOWED_DOMAINS:-pbc.gov.cn,nfra.gov.cn}
+      FINANCE_PILOT_TOKEN_LIMIT: ${FINANCE_PILOT_TOKEN_LIMIT:-1500000}
+      FINANCE_WEB_DEMO: "0"
+      FINANCE_EMBED_DEVICE: cpu
+      FINANCE_SKIP_IMAGE: "1"
+      FINANCE_SKIP_GEN: "1"
+      HF_HOME: /models
+      HF_HUB_OFFLINE: "1"
+      KB_PATH: /app/output/kb_full/kb_v3_manifest.json
+      CACHE_DIR: /app/output/kb_full/vector_cache
+      MEM_SOFT_PCT: "85"
+      MEM_HARD_PCT: "92"
+      MAX_CONCURRENT_INFER: "1"
+      RUN_TIMEOUT_SECONDS: "300"
     ports:
-      - "${API_PORT:-8000}:8000"
+      - "127.0.0.1:${API_PORT:-8002}:8000"
     volumes:
       - ./output:/app/output
-      - ./test:/app/test:ro
-      - ./configs:/app/configs
-      - qa_vector_cache:/app/vector_cache
-      - qa_app_data:/app/data_runtime
-    command: ["python", "-m", "app.main"]
+      - ../model_cache/huggingface:/models:ro
+    command: ["python", "scripts/start_container.py"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health',timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 180s
+      retries: 5
     restart: unless-stopped
-    # 内存上限：容器级硬闸，配合应用内 MemoryGuard 双保险防 OOM Kill 雪崩
     mem_limit: ${API_MEM_LIMIT:-6g}
     memswap_limit: ${API_MEM_LIMIT:-6g}
 
 volumes:
-  qa_vector_cache:
-  qa_app_data:
+  qa_postgres:

@@ -7,9 +7,11 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from app.core.security import TokenError, safe_decode_token
+from app.core.security import TokenError, as_utc, safe_decode_token
+from app.core.config import get_settings
 from app.db.session import get_db
-from app.models import User
+from app.models import RefreshSession, User
+from datetime import datetime, timezone
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -30,6 +32,14 @@ def get_current_user(
     user = db.query(User).filter(User.username == sub).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户不存在")
+    session_id = payload.get("sid")
+    if session_id:
+        session = db.get(RefreshSession, session_id)
+        if (session is None or session.user_id != user.id or session.revoked_at is not None
+                or as_utc(session.expires_at) <= datetime.now(timezone.utc)):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登录已失效")
+    elif get_settings().app_env == "production":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="请重新登录")
     return user
 
 

@@ -13,7 +13,7 @@ python-pptx==0.6.22
 openpyxl==3.1.2
 xlrd==2.0.1
 striprtf==0.0.26
-pywin32==312
+pywin32==312; sys_platform == "win32"
 pandas==2.1.4
 img2pdf==0.5.1
 Pillow==9.5.0
@@ -56,14 +56,27 @@ pydantic-settings==2.6.1
 email-validator==2.2.0
 python-jose[cryptography]==3.3.0
 bcrypt==4.2.1
+argon2-cffi==25.1.0
 psutil==6.1.0
 httpx==0.28.1
+python-multipart==0.0.20
 
 # knowledge graph (optional)
 neo4j==5.13.0
 py2neo==2021.2.4
 
+# agent orchestration (阶段 C：路由 → 检索 → 评分 → 分支 → 双层校验)
+langgraph==1.2.11
+langgraph-checkpoint-sqlite==3.1.1
+langgraph-checkpoint-postgres==3.1.2
+psycopg[binary]==3.3.6
+
 # optional GPU packages (install manually if needed)
+# 已在本机升级为 GPU 版（RTX 3080）：
+#   uv pip install --python .venv\Scripts\python.exe \
+#     --index-url https://download.pytorch.org/whl/cu121 \
+#     "torch==2.1.0+cu121" "torchvision==0.16.0+cu121"
+# 注意：faiss 在 Windows 上只有 CPU 版可用，无需替换（编码瓶颈在 torch，不在 FAISS）。
 # vllm==0.2.2
 # flash-attn==2.3.2
 # triton==2.1.0

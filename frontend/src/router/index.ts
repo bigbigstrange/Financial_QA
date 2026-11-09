@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { getToken } from '@/api/client'
+import { api, getToken, hasRefreshSession } from '@/api/client'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -10,7 +10,10 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
+  if (!getToken() && hasRefreshSession()) {
+    try { await api('/api/auth/me') } catch { /* expired cookie: show login */ }
+  }
   if (to.name !== 'login' && !getToken()) return { name: 'login' }
   if (to.name === 'login' && getToken()) return { name: 'chat' }
   return true

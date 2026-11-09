@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from .model_settings import resolve_gen_model
+from .pilot_budget import PilotBudgetStopped
 from .rerank import EvidenceReranker
 
 
@@ -37,9 +38,10 @@ class QueryPlanner:
 
         # 基金双意图高频问法
         if "基金" in q and re.search(r"内容", q) and re.search(r"流程|认购|购买", q):
+            product = "掌上银行基金" if "掌上银行" in q else "基金"
             return [
-                "掌上银行「基金」功能的主要服务内容",
-                "基金认购/购买的具体操作流程",
+                f"{product}功能的主要服务内容",
+                f"{product}认购/购买的具体操作流程",
             ]
 
         # 典型双意图：…主要服务内容以及…操作流程
@@ -108,9 +110,9 @@ class GenerativeAnswerer:
         self.load_error: Optional[str] = None
         self.device = "cpu"
 
-        api_key = (
-            os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("FINANCE_API_KEY") or ""
-        ).strip()
+        from .llm_api import configured_api_key
+
+        api_key = configured_api_key()
         backend = (os.environ.get("FINANCE_GEN_BACKEND") or "auto").strip().lower()
         if backend == "auto":
             backend = "api" if api_key else "local"
@@ -125,12 +127,12 @@ class GenerativeAnswerer:
                 self.available = True
                 self.model_name = self.api_client.model
                 print(
-                    f"[gen] 使用 DeepSeek API: model={self.api_client.model} "
+                    f"[gen] 使用 {self.api_client.provider} API: model={self.api_client.model} "
                     f"base={self.api_client.base_url}",
                     flush=True,
                 )
                 return
-            self.load_error = "FINANCE_GEN_BACKEND=api 但未配置 DEEPSEEK_API_KEY"
+            self.load_error = "FINANCE_GEN_BACKEND=api 但未配置模型 API Key"
             print(f"[gen] {self.load_error}，回退抽取式", flush=True)
             return
 
@@ -951,7 +953,8 @@ class GenerativeAnswerer:
     def _generate_once(self, prompt: str, max_new_tokens: int, messages: Optional[List[Dict[str, str]]] = None) -> str:
         if self.backend == "api" and self.api_client is not None:
             msgs = messages or [{"role": "user", "content": prompt}]
-            return self.api_client.chat(msgs, temperature=0.2, max_tokens=max_new_tokens)
+            return self.api_client.chat(msgs, temperature=0.2, max_tokens=max_new_tokens,
+                                        node="legacy_generate")
 
         inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=2048)
         import torch
@@ -1009,6 +1012,9 @@ class GenerativeAnswerer:
         策略：先保证「完整结构化答案」，再可选用生成模型润色。
         R1 思考草稿绝不会作为最终答案返回。
         """
+        if evidences and all(ev.get('evidence_kind') == 'page_image' for ev in evidences):
+            from src.agent.nodes import AgentNodes
+            return {'answer': AgentNodes._extractive_answer(evidences), 'thinking': ''}
         evidences = self._dedupe_evidences(evidences, limit=8)
         # 机构硬过滤：浦发题绝不能落到邮储手册
         evidences = self._filter_evidences_by_org(evidences, question)
@@ -1064,6 +1070,8 @@ class GenerativeAnswerer:
                 complete_answer = llm_answer
             elif raw and self._looks_like_draft(raw):
                 thinking = raw if not thinking else thinking
+        except PilotBudgetStopped:
+            raise
         except Exception as e:
             thinking = f"（生成模型调用失败，已回退结构化答案）{e}"
 

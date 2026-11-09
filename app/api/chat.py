@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import json
-import time
-import uuid
 from typing import Annotated, List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -21,9 +19,11 @@ from app.schemas import (
     FeedbackOut,
     FeedbackRequest,
     MessageOut,
+    RunCreateRequest,
 )
+from app.api.runs import raise_for_failed_result
 from app.services.memory_guard import memory_guard
-from app.services.qa_runtime import qa_runtime
+from app.services.run_service import run_service
 
 router = APIRouter(tags=["chat"])
 
@@ -137,42 +137,68 @@ def chat(
     db.commit()
     db.refresh(user_msg)
 
-    qid = f"u{user.id}-{uuid.uuid4().hex[:8]}"
-    t0 = time.time()
     try:
-        result = qa_runtime.answer(q, qid)
-    except MemoryError as e:
+        result = run_service.create_and_execute(
+            db,
+            user_id=user.id,
+            request=RunCreateRequest(
+                question=q,
+                conversation_id=conv.id,
+                top_k=body.top_k,
+                show_thinking=body.show_thinking,
+                use_paid_model=body.use_paid_model,
+                use_web_search=body.use_web_search,
+            ),
+        )
+        raise_for_failed_result(result)
+    except HTTPException:
         memory_guard.persist_last_event(db)
-        raise HTTPException(status_code=503, detail=str(e)) from e
-    except RuntimeError as e:
-        raise HTTPException(status_code=429, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"推理失败: {e}") from e
+        raise
 
-    elapsed = round(time.time() - t0, 2)
-    evidence = result.get("evidence") or []
+    elapsed = round(result.latency_sec or 0.0, 2)
+    evidence = result.evidence
     slim = []
     for ev in evidence[:8]:
-        if isinstance(ev, dict):
-            slim.append(
-                {
-                    "text": (ev.get("text") or "")[:400],
-                    "source_doc": ev.get("source_doc"),
-                    "page": ev.get("page"),
-                    "block_id": ev.get("block_id"),
-                    "score": ev.get("score"),
-                }
-            )
+        # 之前只取 metadata["legacy_score"]，而 v2 证据没有该键 → score 恒为 None；
+        # 同时丢掉了章节/各通道分数。这里补齐可用于溯源与调优的字段。
+        slim.append(
+            {
+                "evidence_id": ev.evidence_id,
+                "text": ev.text[:400],
+                "source_doc": ev.source_name,
+                "page": ev.page_no,
+                "page_end": ev.page_end,
+                "section_path": ev.structure_path,
+                "block_id": ev.block_id,
+                "source_url": ev.metadata.get("source_url"),
+                "score": (
+                    ev.rerank_score
+                    or ev.fusion_score
+                    or ev.metadata.get("legacy_score")
+                ),
+                "fusion_score": ev.fusion_score,
+                "rerank_score": ev.rerank_score,
+                "dense_score": ev.dense_score,
+                "sparse_score": ev.sparse_score,
+                "structured_score": ev.structured_score,
+                "retrieval_channels": ev.retrieval_channels,
+                "quality_flags": ev.quality_flags,
+            }
+        )
+
+    profile = (
+        result.model_snapshot.profile_name if result.model_snapshot else None
+    )
 
     assistant = Message(
         conversation_id=conv.id,
         role="assistant",
-        content=result.get("answer") or "",
-        thinking=(result.get("thinking") or "") if body.show_thinking else None,
-        confidence=float(result.get("confidence") or 0.0),
+        content=result.answer or "",
+        thinking=(result.thinking or "") if body.show_thinking else None,
+        confidence=float(result.confidence or 0.0),
         evidence_json=json.dumps(slim, ensure_ascii=False),
         latency_sec=elapsed,
-        model_profile=result.get("_profile"),
+        model_profile=profile,
     )
     db.add(assistant)
     conv.title = conv.title or (q[:40] + ("…" if len(q) > 40 else ""))
@@ -185,8 +211,9 @@ def chat(
         user_message=_msg_out(user_msg),
         assistant_message=_msg_out(assistant),
         elapsed_sec=elapsed,
-        memory=result.get("_memory") or memory_guard.snapshot().to_dict(),
-        profile=result.get("_profile"),
+        memory=result.memory or memory_guard.snapshot().to_dict(),
+        profile=profile,
+        run_id=result.run_id,
     )
 
 

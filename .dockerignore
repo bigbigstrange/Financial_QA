@@ -5,8 +5,15 @@ __pycache__
 .pytest_cache
 .mypy_cache
 .ruff_cache
+.venv
+.conda
+.worktrees
 .git
 .gitignore
+.env*
+!.env.example
+data_app.db*
+*.sqlite3*
 .idea
 .vscode
 vector_cache
@@ -14,3 +21,12 @@ vector_cache
 *.pkl
 # Large KB artifacts: mount at runtime (see docker-compose.yml)
 output
+frontend/node_modules
+frontend/dist
+.agents
+.specify
+specs
+data/documents
+*.docx
+docx_extract.txt
+docx_tables.txt

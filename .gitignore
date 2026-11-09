@@ -1,25 +1,48 @@
+﻿# ---- secrets ----
 .env
 .env.*
 !.env.example
-data_app.db
-__pycache__/
-*.pyc
-.pytest_cache/
-.conda/
-vector_cache/
-frontend/node_modules/
-frontend/dist/
-*.log
-.DS_Store
+*.pem
+*.key
 
-# 原始语料与解析产物体积过大，不入库（本地自行准备）
+# ---- python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.conda/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# ---- node / frontend ----
+node_modules/
+frontend/dist/
+frontend/node_modules/
+
+# ---- 业务数据与大文件（不入库）----
 data/documents/**
 !data/documents/.gitkeep
 output/**
 !output/.gitkeep
+vector_cache/
+*.db
+*.sqlite3
+*.log
+tools/
 
-# 本地 IDE / 系统
-.vscode/
-.idea/
+# ---- 本地产物 ----
+*.docx
+*.xlsx
+!test/*.xlsx
 *.bak
 *.bak_*
+
+# ---- IDE / 系统 ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

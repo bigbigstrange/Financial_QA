@@ -9,7 +9,8 @@ import os
 import re
 from typing import Dict, List, Optional
 
-from .llm_api import DeepSeekAPIClient
+from .llm_api import DeepSeekAPIClient, configured_api_key
+from .pilot_budget import PilotBudgetStopped
 
 
 def _truthy(name: str) -> bool:
@@ -73,7 +74,7 @@ def _token_set(text: str) -> set[str]:
 class EvidenceReranker:
     """
     FINANCE_RERANK_BACKEND:
-      - hybrid（默认）：简单题 heuristic，难例 api（无 Key 则全程 heuristic）
+      - hybrid（默认）：保留 RRF 顺序，难例且 API 可用时才调用 API
       - heuristic：仅关键词/机构加权
       - api：全程 API
       - none：仅原 fusion 分数
@@ -81,9 +82,7 @@ class EvidenceReranker:
 
     def __init__(self, model_name: Optional[str] = None) -> None:
         _ = model_name  # 兼容旧调用签名，已不再加载本地重排模型
-        api_key = (
-            os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("FINANCE_API_KEY") or ""
-        ).strip()
+        api_key = configured_api_key()
         backend = (os.environ.get("FINANCE_RERANK_BACKEND") or "hybrid").strip().lower()
         if backend in {"auto", ""}:
             backend = "hybrid"
@@ -125,11 +124,10 @@ class EvidenceReranker:
         if hard and self.api_client is not None:
             print("[rerank] 难例 → API 轻量重排", flush=True)
             return self._rerank_api(question, evidences, top_k)
-        if hard and self.api_client is None:
-            print("[rerank] 难例但无 API Key → heuristic", flush=True)
-        else:
-            print("[rerank] 简单题 → heuristic", flush=True)
-        return self._rerank_heuristic(question, evidences, top_k)
+        # RRF 分数约 0.01-0.05，heuristic 奖励最高可达 0.35，直接相加
+        # 会淹没多通道排序。离线候选集已观测到 Top-5 命中下降，因此默认
+        # 仅保留融合顺序；显式选择 heuristic 的实验配置仍可使用旧规则。
+        return self._by_fusion(evidences, top_k)
 
     @staticmethod
     def _by_fusion(evidences: List[Dict], top_k: int) -> List[Dict]:
@@ -196,7 +194,6 @@ class EvidenceReranker:
                 bonus += 0.05
 
             item["rerank_score"] = base + bonus
-            item["fusion_score"] = item["rerank_score"]
             ch = str(item.get("retrieval_channel") or "text")
             if "+heuristic" not in ch:
                 item["retrieval_channel"] = ch + "+heuristic"
@@ -229,10 +226,6 @@ class EvidenceReranker:
                     continue
                 item = dict(pool[idx])
                 item["rerank_score"] = float(len(order) - rank_i) / float(max(1, len(order)))
-                item["fusion_score"] = max(
-                    float(item.get("fusion_score", item.get("score", 0.0)) or 0.0),
-                    float(item["rerank_score"]),
-                )
                 ch = str(item.get("retrieval_channel") or "text").replace("+heuristic", "")
                 item["retrieval_channel"] = ch + "+api_rerank"
                 ranked.append(item)
@@ -243,6 +236,8 @@ class EvidenceReranker:
                 flush=True,
             )
             return ranked[:top_k]
+        except PilotBudgetStopped:
+            raise
         except Exception as e:
             print(f"[rerank] API 失败，回退 heuristic: {e}", flush=True)
             return pool[:top_k]

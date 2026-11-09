@@ -4,9 +4,20 @@ import os
 import pickle
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from .model_settings import ensure_hf_mirror, resolve_clip_model, resolve_colpali, resolve_embed_batch_size, resolve_embed_device
+from src.pipeline.docir import DocIR
+from src.pipeline.snapshots import SnapshotManifest, read_manifest
+from .sparse import SparseRetriever
+from .structured import StructuredRetriever
+from .vision import page_image_key
+from .index_fingerprint import (
+    IndexFingerprint,
+    index_meta_matches,
+    load_index_fingerprint_meta,
+    write_index_fingerprint_meta,
+)
 
 ensure_hf_mirror()
 
@@ -127,6 +138,147 @@ class KnowledgeStore:
         self.blocks: List[Dict] = []
         self.page_images: Dict[Tuple[str, int], str] = {}
 
+    # ---- 检索单元（chunk）加载：KB v3 主路径 ---------------------------------
+    #
+    # 阶段 A 的切块器把行级碎片聚合成 400+ 字的语义单元，若检索层仍按 block 加载，
+    # 切块成果就完全用不上。因此 KB v3 的 `chunks.jsonl` 优先级最高。
+
+    @staticmethod
+    def _resolve_chunks_path(kb_path: Path) -> Optional[Path]:
+        """定位 chunks.jsonl：可能是路径本身、同目录兄弟文件，或目录内文件。"""
+        if kb_path.is_file():
+            if kb_path.name == "chunks.jsonl":
+                return kb_path
+            sibling = kb_path.with_name("chunks.jsonl")
+            return sibling if sibling.is_file() else None
+        if kb_path.is_dir():
+            candidate = kb_path / "chunks.jsonl"
+            return candidate if candidate.is_file() else None
+        return None
+
+    @staticmethod
+    def _ingest_chunk(item: Dict, blocks: List[Dict]) -> None:
+        """把 chunks.jsonl 的一行规范成检索层 runtime block。
+
+        `Chunk.to_retrieval_item()` 已经产出了与检索层一致的字段命名，
+        这里只做兜底补齐，保证下游（FAISS/BM25/结构化/图通道）无需感知来源差异。
+        """
+        content = (item.get("content") or "").strip()
+        if not content:
+            return
+        chunk_id = item.get("chunk_id") or item.get("block_id")
+        if not chunk_id:
+            return
+        page_start = item.get("page_start", item.get("page"))
+        page_end = item.get("page_end", page_start)
+        blocks.append(
+            {
+                "block_id": chunk_id,
+                "chunk_id": chunk_id,
+                "block_ids": list(item.get("block_ids") or []),
+                "content": content,
+                "source_doc": item.get("source_doc") or "unknown_doc",
+                "document_id": item.get("document_id"),
+                "document_version": item.get("document_version"),
+                "snapshot_id": item.get("snapshot_id"),
+                "page": page_start,
+                "page_start": page_start,
+                "page_end": page_end,
+                "bbox": item.get("bbox"),
+                "section_path": item.get("section_path"),
+                "type": item.get("type") or "paragraph",
+                "parent_block_id": item.get("parent_block_id"),
+                "char_len": item.get("char_len") or len(content),
+                "token_estimate": item.get("token_estimate") or 0,
+                "overlap_prev_chars": item.get("overlap_prev_chars") or 0,
+                "trailing_prose_end": item.get("trailing_prose_end"),
+                "quality_flags": list(item.get("quality_flags") or []),
+                "source_format": item.get("source_format"),
+                "image_ref": item.get("image_ref"),
+                "score": 0.0,
+            }
+        )
+
+    @staticmethod
+    def _chunk_matches(item: Dict, keywords: Optional[List[str]]) -> bool:
+        if not keywords:
+            return True
+        blob = "\n".join(
+            [
+                str(item.get("source_doc") or ""),
+                str(item.get("section_path") or ""),
+                str(item.get("document_id") or ""),
+                str(item.get("content") or "")[:2000],
+            ]
+        )
+        return any(k in blob for k in keywords)
+
+    def _load_chunks(
+        self,
+        path: Path,
+        *,
+        max_blocks: Optional[int],
+        doc_keywords: Optional[List[str]],
+    ) -> List[Dict]:
+        blocks: List[Dict] = []
+        keywords = [k for k in (doc_keywords or []) if k] or None
+        with path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    item = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not self._chunk_matches(item, keywords):
+                    continue
+                self._ingest_chunk(item, blocks)
+                if max_blocks is not None and len(blocks) >= max_blocks:
+                    break
+        return blocks
+
+    def _load_page_images_from_manifest(self) -> Dict[Tuple[str, int], str]:
+        """从快照 manifest 收集页图引用（视觉检索通道依赖它）。
+
+        旧链路的页图路径全部指向已失效的外机绝对路径，导致图像通道 100% 失效；
+        KB v3 在解析阶段就地渲染页图，这里把相对路径收上来供检索层解析。
+        """
+        images: Dict[Tuple[str, int], str] = {}
+        manifest_path = self.kb_path.with_name("kb_v3_manifest.json")
+        if not manifest_path.is_file():
+            manifest_path = self.kb_path
+        try:
+            manifest = read_manifest(manifest_path)
+        except (ValueError, KeyError, TypeError, json.JSONDecodeError, OSError):
+            return images
+        base_dir = manifest_path.parent
+        for artifact in manifest.versions:
+            docir_path = Path(artifact.docir_path.replace('\\', '/'))
+            if not docir_path.is_absolute():
+                docir_path = base_dir / docir_path
+            if not docir_path.is_file():
+                continue
+            try:
+                doc_ir = DocIR.from_dict(
+                    json.loads(docir_path.read_text(encoding="utf-8"))
+                )
+            except (ValueError, KeyError, TypeError, json.JSONDecodeError, OSError):
+                continue
+            doc_key = (doc_ir.document_version if doc_ir.document_version != "legacy-v1"
+                       else doc_ir.document_id) or doc_ir.document_id
+            for page in doc_ir.pages:
+                ref = (page.meta or {}).get("image_ref")
+                if not ref:
+                    continue
+                resolved = Path(ref.replace('\\', '/'))
+                if not resolved.is_absolute():
+                    # 引用统一为「相对 KB 根目录」（见 kb_builder._rebase_refs）
+                    resolved = base_dir / resolved
+                if resolved.is_file():
+                    images[(doc_key, page.page_no)] = str(resolved)
+        return images
+
     @staticmethod
     def _ingest_pages_from_doc(
         doc: Dict,
@@ -158,6 +310,19 @@ class KnowledgeStore:
                         "content": text,
                         "image_ref": image_ref,
                         "score": 0.0,
+                        # 以下字段旧版被整段丢弃，导致结构化通道的章节匹配、
+                        # 表格证据、机构/日期过滤在主链路上全部失效。
+                        "section_path": block.get("section_path"),
+                        "parent_id": block.get("parent_id"),
+                        "structural_locator": block.get("structural_locator"),
+                        "caption": block.get("caption"),
+                        "unit": block.get("unit"),
+                        "table_headers": block.get("table_headers") or [],
+                        "table_rows": block.get("table_rows") or [],
+                        "table_md": block.get("table_md"),
+                        "formula_latex": block.get("formula_latex"),
+                        "ocr_used": bool(block.get("ocr_used")),
+                        "quality_flags": list(block.get("quality_flags") or []),
                     }
                 )
 
@@ -220,6 +385,37 @@ class KnowledgeStore:
         blocks: List[Dict] = []
         page_images: Dict[Tuple[str, int], str] = {}
         path = self.kb_path
+        if not path.exists():
+            raise FileNotFoundError(f"知识库路径不存在: {path}")
+
+        # 优先级 1：KB v3 的 chunks.jsonl（阶段 A 的切块成果，检索单元质量最高）
+        chunks_path = self._resolve_chunks_path(path)
+        if chunks_path is not None:
+            loaded = self._load_chunks(
+                chunks_path, max_blocks=max_blocks, doc_keywords=doc_keywords
+            )
+            if loaded:
+                self.blocks = loaded
+                self.page_images = self._load_page_images_from_manifest()
+                print(
+                    f"已从 chunks.jsonl 加载检索单元: {len(loaded)}"
+                    f"（页图 {len(self.page_images)} 张）",
+                    flush=True,
+                )
+                return self.blocks
+
+        if path.is_file():
+            try:
+                manifest = read_manifest(path)
+            except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+                manifest = None
+            if manifest is not None:
+                self.blocks, self.page_images = self._load_manifest(
+                    manifest,
+                    max_blocks=max_blocks,
+                    doc_keywords=doc_keywords,
+                )
+                return self.blocks
         large_kb = path.is_file() and path.stat().st_size > 80 * 1024 * 1024
         keywords = [k for k in (doc_keywords or []) if k]
 
@@ -277,9 +473,69 @@ class KnowledgeStore:
         self.page_images = page_images
         return blocks
 
+    def _load_manifest(
+        self,
+        manifest: SnapshotManifest,
+        *,
+        max_blocks: Optional[int],
+        doc_keywords: Optional[List[str]],
+    ) -> Tuple[List[Dict], Dict[Tuple[str, int], str]]:
+        blocks: List[Dict] = []
+        page_images: Dict[Tuple[str, int], str] = {}
+        for artifact in manifest.versions:
+            docir_path = Path(artifact.docir_path)
+            if not docir_path.is_absolute():
+                docir_path = self.kb_path.parent / docir_path
+            if not docir_path.is_file():
+                raise FileNotFoundError(f"快照引用缺失 DocIR: {docir_path}")
+            doc_ir = DocIR.from_dict(json.loads(docir_path.read_text(encoding="utf-8")))
+            for page in doc_ir.pages:
+                page_no = page.page_no
+                if page.meta.get("image_ref"):
+                    page_images[(doc_ir.document_id, page_no)] = page.meta["image_ref"]
+                for block in page.blocks:
+                    text = (block.text or "").strip()
+                    if not text:
+                        continue
+                    item = {
+                        "snapshot_id": manifest.snapshot_id,
+                        "document_id": doc_ir.document_id,
+                        "document_version": doc_ir.document_version,
+                        "source_doc": doc_ir.source_name or doc_ir.doc_id,
+                        "page": page_no,
+                        "block_id": block.block_id,
+                        "type": block.block_type,
+                        "bbox": block.bbox,
+                        "content": text,
+                        "section_path": block.section_path,
+                        "structural_locator": block.structural_locator,
+                        "parent_id": block.parent_id,
+                        "quality_flags": block.quality_flags,
+                        "image_ref": block.meta.get("image_ref")
+                        or page.meta.get("image_ref"),
+                        "score": 0.0,
+                    }
+                    if block.meta.get("image_ref") or page.meta.get("image_ref"):
+                        page_images[(doc_ir.document_id, page_no)] = (
+                            block.meta.get("image_ref")
+                            or page.meta.get("image_ref")
+                        )
+                    blocks.append(item)
+                    if max_blocks is not None and len(blocks) >= max_blocks:
+                        return blocks, page_images
+        return blocks, page_images
+
 
 class TextRetriever:
-    def __init__(self, model_name: str, cache_dir: str, kb_hash: str, device: Optional[str] = None):
+    def __init__(
+        self,
+        model_name: str,
+        cache_dir: str,
+        kb_hash: str,
+        device: Optional[str] = None,
+        snapshot_id: Optional[str] = None,
+        snapshot_config: Optional[Dict] = None,
+    ):
         self.device = device if device is not None else resolve_embed_device()
         self.embed_batch_size = resolve_embed_batch_size(self.device)
         # Windows 上多线程 + 大模型权重易原生闪退
@@ -292,24 +548,89 @@ class TextRetriever:
         ST = _get_sentence_transformer_cls()
         print(f"正在加载嵌入模型: {model_name} (device={self.device}) …", flush=True)
         self.model = ST(model_name, device=self.device)
+        self.model_name = model_name
+        # 限制最大序列长度：BGE-M3 默认 8192，而 torch 2.1.0 下 transformers 不启用 SDPA，
+        # 退回 eager attention 后显存随序列长度增长（实测编码 2,910 块峰值约 8.2GB）。
+        # 本项目 chunk 长度中位数约 390 字，512 token 足以覆盖绝大多数内容。
+        max_seq = (os.environ.get("FINANCE_EMBED_MAX_SEQ_LEN") or "").strip()
+        max_seq_len = int(max_seq) if max_seq.isdigit() and int(max_seq) > 0 else 512
+        try:
+            self.model.max_seq_length = max_seq_len
+            print(f"嵌入最大序列长度: {max_seq_len}", flush=True)
+        except Exception:  # noqa: BLE001 — 模型不支持该属性时忽略
+            pass
         print("嵌入模型加载完成。", flush=True)
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.kb_hash = kb_hash
+        self.snapshot_id = snapshot_id
+        self.snapshot_config = snapshot_config or {}
+        try:
+            revision = self.model[0].auto_model.config._commit_hash or "local-unversioned"
+        except (AttributeError, TypeError, KeyError, IndexError):
+            revision = "local-unversioned"
+        self.embedding_revision = f"{revision}:max_seq={max_seq_len}"
+        self.fingerprint = self._build_fingerprint()
         self.index = None
         self.metadata: List[Dict] = []
 
     def _cache_paths(self) -> Tuple[Path, Path]:
         dim = self.model.get_sentence_embedding_dimension()
-        prefix = f"{self.kb_hash}_{dim}_text"
+        if self.fingerprint is not None:
+            prefix = f"{self.fingerprint.cache_key()}_text"
+        else:
+            prefix = f"{self.kb_hash}_{dim}_text"
         return self.cache_dir / f"{prefix}.faiss", self.cache_dir / f"{prefix}.pkl"
+
+    def _build_fingerprint(self) -> Optional[IndexFingerprint]:
+        if not self.snapshot_id:
+            return None
+        dim = int(self.model.get_sentence_embedding_dimension())
+        return IndexFingerprint(
+            snapshot_id=self.snapshot_id,
+            embedding_model=self.model_name,
+            embedding_revision=self.embedding_revision,
+            embedding_dimension=dim,
+            normalization_method="l2",
+            distance_metric="ip",
+            docir_schema_version=self.snapshot_config.get("docir_schema_version", 2),
+            chunker_version=self.snapshot_config.get("chunker_version") or os.environ.get("FINANCE_CHUNKER_VERSION", "chunk-v2"),
+            parser_versions_hash=self.snapshot_config.get("parser_versions_hash") or os.environ.get(
+                "FINANCE_PARSER_VERSIONS_HASH",
+                "parsers-v2",
+            ),
+            retrieval_channel="text",
+            demo_subset_hash=self._demo_subset_hash(),
+        )
+
+    @staticmethod
+    def _demo_subset_hash() -> str | None:
+        raw = os.environ.get("FINANCE_DEMO_KEYWORDS") or ""
+        if not raw:
+            return None
+        return hashlib.md5(raw.strip().encode("utf-8")).hexdigest()[:16]
 
     def build(self, blocks: List[Dict], force_rebuild: bool = False) -> None:
         index_path, meta_path = self._cache_paths()
         if not force_rebuild and index_path.exists() and meta_path.exists():
-            self.index = _faiss_read_index(index_path)
-            self.metadata = pickle.loads(meta_path.read_bytes())
-            return
+            saved_meta = load_index_fingerprint_meta(index_path)
+            block_digest = None
+            if self.fingerprint is not None:
+                block_digest = _digest_block_ids(blocks)
+                if not index_meta_matches(
+                    self.fingerprint,
+                    saved_meta,
+                    block_ids_sha256=block_digest,
+                ):
+                    print(
+                        f"Fingerprint 不匹配，重建文本缓存: {index_path.name}",
+                        flush=True,
+                    )
+                    force_rebuild = True
+            if not force_rebuild:
+                self.index = _faiss_read_index(index_path)
+                self.metadata = pickle.loads(meta_path.read_bytes())
+                return
 
         texts = [b["content"] for b in blocks]
         if not texts:
@@ -349,14 +670,28 @@ class TextRetriever:
         self.metadata = blocks
         _faiss_write_index(self.index, index_path)
         meta_path.write_bytes(pickle.dumps(self.metadata))
+        if self.fingerprint is not None:
+            write_index_fingerprint_meta(
+                index_path,
+                self.fingerprint,
+                block_ids_sha256=_digest_block_ids(blocks),
+            )
         print(f"文本向量已缓存: {index_path.name}", flush=True)
 
-    def search(self, query: str, top_k: int = 10) -> List[Dict]:
+    def search(
+        self,
+        query: str,
+        top_k: int = 10,
+        visibility: Optional[Any] = None,
+    ) -> List[Dict]:
         if self.index is None:
             return []
+        candidate_k = top_k
+        if visibility is not None:
+            candidate_k = min(len(self.metadata), max(top_k * 4, top_k))
         q = self.model.encode([query], batch_size=1, convert_to_numpy=True).astype(np.float32)
         faiss.normalize_L2(q)
-        scores, idxs = self.index.search(q, top_k)
+        scores, idxs = self.index.search(q, candidate_k)
         out = []
         for score, idx in zip(scores[0], idxs[0]):
             if 0 <= idx < len(self.metadata):
@@ -364,6 +699,12 @@ class TextRetriever:
                 item["score"] = float(score)
                 item["retrieval_channel"] = "text"
                 out.append(item)
+        if visibility is not None:
+            out = [
+                item
+                for item in out
+                if visibility.allowed(item.get("document_version") or "")
+            ][:top_k]
         return out
 
 
@@ -383,10 +724,14 @@ class VisionPageRetriever:
         model_name: Optional[str] = None,
         text_proxy_model: Optional[str] = None,
         device: Optional[str] = None,
+        snapshot_id: Optional[str] = None,
+        snapshot_config: Optional[Dict] = None,
     ):
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.kb_hash = kb_hash
+        self.snapshot_id = snapshot_id
+        self.snapshot_config = snapshot_config or {}
         self.backend = backend
         self.device = device if device is not None else resolve_embed_device()
         self.embed_batch_size = resolve_embed_batch_size(self.device)
@@ -402,15 +747,55 @@ class VisionPageRetriever:
         self._visrag_bundle = None
 
     def _cache_paths(self) -> Tuple[Path, Path]:
-        prefix = f"{self.kb_hash}_{self.backend}_image"
+        if self.snapshot_id:
+            prefix = f"{self._path_fingerprint().cache_key()}_image_page_identity_v2"
+        else:
+            prefix = f"{self.kb_hash}_{self.backend}_image_page_identity_v2"
         return self.cache_dir / f"{prefix}.faiss", self.cache_dir / f"{prefix}.pkl"
+
+    def _path_fingerprint(self, dim: int = 0) -> IndexFingerprint:
+        pipeline = getattr(self, "snapshot_config", {})
+        return IndexFingerprint(
+            snapshot_id=self.snapshot_id or self.kb_hash,
+            embedding_model=self.model_name,
+            embedding_revision="main",
+            embedding_dimension=int(dim),
+            normalization_method="l2",
+            distance_metric="ip",
+            docir_schema_version=pipeline.get("docir_schema_version", 2),
+            chunker_version=pipeline.get("chunker_version") or os.environ.get("FINANCE_CHUNKER_VERSION", "chunk-v2"),
+            parser_versions_hash=pipeline.get("parser_versions_hash") or os.environ.get(
+                "FINANCE_PARSER_VERSIONS_HASH",
+                "parsers-v2",
+            ),
+            retrieval_channel=f"image_{self.backend}",
+        )
 
     def build(self, blocks: List[Dict], page_images: Dict[Tuple[str, int], str], force_rebuild: bool = False) -> None:
         index_path, meta_path = self._cache_paths()
         if not force_rebuild and index_path.exists() and meta_path.exists():
-            self.index = _faiss_read_index(index_path)
-            self.metadata = pickle.loads(meta_path.read_bytes())
-            return
+            if self.snapshot_id:
+                saved_meta = load_index_fingerprint_meta(index_path)
+                dim = (
+                    int(saved_meta.get("embedding_dimension") or 0)
+                    if isinstance(saved_meta, dict)
+                    else 0
+                )
+                validation = self._path_fingerprint(dim=dim)
+                if not index_meta_matches(
+                    validation,
+                    saved_meta,
+                    block_ids_sha256=_digest_block_ids(blocks),
+                ):
+                    print(
+                        f"图像指纹不匹配，重建缓存: {index_path.name}",
+                        flush=True,
+                    )
+                    force_rebuild = True
+            if not force_rebuild:
+                self.index = _faiss_read_index(index_path)
+                self.metadata = pickle.loads(meta_path.read_bytes())
+                return
 
         page_items = self._build_page_items(blocks, page_images)
         if not page_items:
@@ -436,12 +821,20 @@ class VisionPageRetriever:
         self.metadata = page_items
         _faiss_write_index(self.index, index_path)
         meta_path.write_bytes(pickle.dumps(self.metadata))
+        if self.snapshot_id:
+            write_index_fingerprint_meta(
+                index_path,
+                self._path_fingerprint(dim=int(embeddings.shape[1])),
+                block_ids_sha256=_digest_block_ids(blocks),
+            )
 
     @staticmethod
     def _build_page_items(blocks: List[Dict], page_images: Dict[Tuple[str, int], str]) -> List[Dict]:
         grouped: Dict[Tuple[str, int], List[Dict]] = {}
         for b in blocks:
-            key = (b["source_doc"], int(b["page"]))
+            if b.get("page") is None:
+                continue
+            key = page_image_key(b, int(b["page"]), page_images)
             grouped.setdefault(key, []).append(b)
 
         items: List[Dict] = []
@@ -449,7 +842,7 @@ class VisionPageRetriever:
             image_ref = page_images.get((doc, page)) or rows[0].get("image_ref")
             items.append(
                 {
-                    "source_doc": doc,
+                    "source_doc": rows[0]["source_doc"],
                     "page": page,
                     "block_id": f"{doc}_p{page}_img",
                     "type": "page_image",
@@ -638,19 +1031,33 @@ class VisionPageRetriever:
         except Exception:
             return None
 
-    def search(self, query: str, top_k: int = 6) -> List[Dict]:
+    def search(
+        self,
+        query: str,
+        top_k: int = 6,
+        visibility: Optional[Any] = None,
+    ) -> List[Dict]:
         if self.index is None:
             return []
+        candidate_k = top_k
+        if visibility is not None:
+            candidate_k = min(len(self.metadata), max(top_k * 4, top_k))
         q = self._encode_query(query).astype(np.float32)
         q = np.expand_dims(q, axis=0)
         faiss.normalize_L2(q)
-        scores, idxs = self.index.search(q, top_k)
+        scores, idxs = self.index.search(q, candidate_k)
         out = []
         for score, idx in zip(scores[0], idxs[0]):
             if 0 <= idx < len(self.metadata):
                 item = dict(self.metadata[idx])
                 item["score"] = float(score)
                 out.append(item)
+        if visibility is not None:
+            out = [
+                item
+                for item in out
+                if visibility.allowed(item.get("document_version") or "")
+            ][:top_k]
         return out
 
 
@@ -667,22 +1074,50 @@ class FusionRetriever:
             rank_scores[key] = rank_scores.get(key, 0.0) + 1.0 / (k + rank)
         return rank_scores
 
-    def search(self, query: str, top_k: int = 10) -> List[Dict]:
-        text_results = self.text_retriever.search(query, top_k=max(12, top_k))
-        image_results = self.image_retriever.search(query, top_k=max(8, top_k // 2))
+    def search(
+        self,
+        query: str,
+        top_k: int = 10,
+        visibility: Optional[Any] = None,
+    ) -> List[Dict]:
+        text_results = self.text_retriever.search(
+            query,
+            top_k=max(12, top_k),
+            visibility=visibility,
+        )
+        image_results = self.image_retriever.search(
+            query,
+            top_k=max(8, top_k // 2),
+            visibility=visibility,
+        )
         text_rrf = self._rrf_rank(text_results)
         image_rrf = self._rrf_rank(image_results)
 
         merged: Dict[str, Dict] = {}
-        for item in text_results + image_results:
+        for item, is_text in [(x, True) for x in text_results] + [(x, False) for x in image_results]:
             bid = item["block_id"]
             if bid not in merged:
                 merged[bid] = dict(item)
             merged[bid]["fusion_score"] = text_rrf.get(bid, 0.0) + image_rrf.get(bid, 0.0)
             merged[bid]["text_rrf"] = text_rrf.get(bid, 0.0)
             merged[bid]["image_rrf"] = image_rrf.get(bid, 0.0)
+            if item.get("image_score") is not None:
+                for key in ("image_score", "image_ref", "vision_page", "page_id", "image_sha256"):
+                    merged[bid][key] = item.get(key)
+            if is_text:
+                merged[bid]["dense_score"] = float(item.get("dense_score", item.get("score")) or 0.0)
+            channel = item.get("retrieval_channel")
+            channels = merged[bid].setdefault("retrieval_channels", [])
+            if channel and channel not in channels:
+                channels.append(channel)
 
         ranked = sorted(merged.values(), key=lambda x: x.get("fusion_score", 0.0), reverse=True)
+        if visibility is not None:
+            ranked = [
+                item
+                for item in ranked
+                if visibility.allowed(item.get("document_version") or "")
+            ]
         return ranked[:top_k]
 
 
@@ -790,28 +1225,155 @@ class Neo4jGraphRetriever:
 
 
 class HybridRetriever:
-    def __init__(self, fusion_retriever: FusionRetriever, graph_retriever: Optional[Neo4jGraphRetriever] = None):
+    def __init__(
+        self,
+        fusion_retriever: FusionRetriever,
+        graph_retriever: Optional[Neo4jGraphRetriever] = None,
+        sparse_retriever: Optional[SparseRetriever] = None,
+        structured_retriever: Optional[StructuredRetriever] = None,
+        lightrag_retriever: Optional[Any] = None,
+        graph_weight: float = 1.0,
+    ):
         self.fusion_retriever = fusion_retriever
         self.graph_retriever = graph_retriever
+        self.sparse_retriever = sparse_retriever
+        self.structured_retriever = structured_retriever
+        # 第 4 通道（阶段 B）：LightRAG 的实体+关系双索引。
+        # 与 Neo4jGraphRetriever 的区别：后者是"关键词/数值共现"的轻量本地图，
+        # 前者是 LLM 抽取的真实实体关系图 —— 两者可共存，也可单独开关。
+        self.lightrag_retriever = lightrag_retriever
+        # 图通道权重，便于消融实验（设为 0 等价于关闭该通道）
+        self.graph_weight = float(graph_weight if graph_weight is not None else 1.0)
 
-    def search(self, query: str, top_k: int = 10) -> List[Dict]:
-        dense = self.fusion_retriever.search(query, top_k=top_k)
-        if self.graph_retriever is None:
-            return dense
-        graph = self.graph_retriever.search(query, top_k=max(4, top_k // 2))
+    def search(
+        self,
+        query: str,
+        top_k: int = 10,
+        visibility: Optional[Any] = None,
+        allow_remote_graph: bool = True,
+    ) -> List[Dict]:
+        dense = self.fusion_retriever.search(query, top_k=top_k, visibility=visibility)
+        candidate_k = min(len(dense) + 200, max(top_k * 4, 20))
+        sparse = (
+            self.sparse_retriever.search(
+                query,
+                top_k=candidate_k,
+                visibility=visibility,
+            )
+            if self.sparse_retriever is not None
+            else []
+        )
+        structured = (
+            self.structured_retriever.search(
+                query,
+                top_k=candidate_k,
+                visibility=visibility,
+            )
+            if self.structured_retriever is not None
+            else []
+        )
+        graph = (
+            self.graph_retriever.search(query, top_k=max(4, top_k // 2))
+            if self.graph_retriever is not None
+            else []
+        )
+        # 第 4 通道：LightRAG 图检索。它自身保证「服务不可达 → 返回空列表」，
+        # 因此这里不需要 try/except，也不会因为图服务故障拖垮其余三路。
+        lightrag = (
+            self.lightrag_retriever.search(
+                query, top_k=candidate_k, visibility=visibility
+            )
+            if self.lightrag_retriever is not None and (
+                allow_remote_graph or not getattr(self.lightrag_retriever, "requires_remote_model", False)
+            )
+            else []
+        )
+        for item in dense:
+            if "dense_score" not in item and item.get("image_score") is None:
+                item["dense_score"] = float(item.get("score") or 0.0)
+            channels = item.setdefault("retrieval_channels", [])
+            channel = item.get("retrieval_channel")
+            if channel and channel not in channels:
+                channels.append(channel)
         merged = {x["block_id"]: x for x in dense}
+        for item in sparse + structured + lightrag:
+            bid = item["block_id"]
+            if bid not in merged:
+                merged[bid] = dict(item)
+            else:
+                if item.get("sparse_score") is not None:
+                    merged[bid]["sparse_score"] = max(
+                        float(merged[bid].get("sparse_score") or 0.0),
+                        float(item["sparse_score"]),
+                    )
+                if item.get("structured_score") is not None:
+                    merged[bid]["structured_score"] = max(
+                        float(merged[bid].get("structured_score") or 0.0),
+                        float(item["structured_score"]),
+                    )
+                if item.get("graph_score") is not None:
+                    merged[bid]["graph_score"] = max(
+                        float(merged[bid].get("graph_score") or 0.0),
+                        float(item["graph_score"]),
+                    )
+                if item.get("kg_entities"):
+                    merged[bid]["kg_entities"] = item["kg_entities"]
+                if item.get("kg_relations"):
+                    merged[bid]["kg_relations"] = item["kg_relations"]
+            channel = item.get("retrieval_channel")
+            channels = merged[bid].setdefault("retrieval_channels", [])
+            if channel and channel not in channels:
+                channels.append(channel)
         for g in graph:
             if g["block_id"] not in merged:
                 merged[g["block_id"]] = g
-        ranked = sorted(merged.values(), key=lambda x: x.get("fusion_score", x.get("score", 0.0)), reverse=True)
+        dense_rrf = FusionRetriever._rrf_rank(dense)
+        sparse_rrf = FusionRetriever._rrf_rank(sparse)
+        structured_rrf = FusionRetriever._rrf_rank(structured)
+        graph_rrf = FusionRetriever._rrf_rank(graph)
+        lightrag_rrf = FusionRetriever._rrf_rank(lightrag)
+        for item in merged.values():
+            bid = item["block_id"]
+            item["dense_rrf"] = dense_rrf.get(bid, 0.0)
+            item["sparse_rrf"] = sparse_rrf.get(bid, 0.0)
+            item["structured_rrf"] = structured_rrf.get(bid, 0.0)
+            item["graph_rrf"] = graph_rrf.get(bid, 0.0)
+            # 图通道权重可调：0 表示消融实验中关闭该路
+            item["lightrag_rrf"] = lightrag_rrf.get(bid, 0.0) * self.graph_weight
+            item["fusion_score"] = (
+                item["dense_rrf"]
+                + item["sparse_rrf"]
+                + item["structured_rrf"]
+                + item["graph_rrf"]
+                + item["lightrag_rrf"]
+            )
+        ranked = sorted(
+            merged.values(),
+            key=lambda x: x.get("fusion_score", 0.0),
+            reverse=True,
+        )
+        for rank, item in enumerate(ranked, start=1):
+            item["fusion_rank"] = rank
+        if visibility is not None:
+            ranked = [
+                item
+                for item in ranked
+                if visibility.allowed(item.get("document_version") or "")
+            ]
         return ranked[:top_k]
 
 
 class _EmptyImageRetriever:
-    """演示/低内存模式：跳过图像塔，避免再加载一套向量模型。"""
+    """演示/低内存模式：跳过图像塔，避免再加载一套向量模型。
 
-    def search(self, query: str, top_k: int = 6) -> List[Dict]:
-        _ = query, top_k
+    注意：`search` 必须接受 `visibility` 等关键字参数。历史上这里签名与
+    `FusionRetriever` 的调用不一致，导致 skip_image 模式下整条融合检索
+    抛 TypeError 并返回 0 条证据（静默失败，极难发现）。
+    用 `**kwargs` 兜底，避免今后再加参数时重演。
+    """
+
+    def search(self, query: str, top_k: int = 6, **kwargs: Any) -> List[Dict]:
+        _ = query, top_k, kwargs
         return []
 
 
@@ -834,6 +1396,14 @@ def _env_skip_image() -> bool:
     return (os.getenv("FINANCE_SKIP_IMAGE") or "").strip().lower() in {"1", "true", "yes", "y"}
 
 
+def _digest_block_ids(blocks: List[Dict]) -> str:
+    digest = hashlib.sha256()
+    for block_id in sorted(str(block.get("block_id") or "") for block in blocks):
+        digest.update(block_id.encode("utf-8"))
+        digest.update(b"\x00")
+    return digest.hexdigest()
+
+
 def build_retrieval_stack(
     kb_path: str,
     cache_dir: str,
@@ -853,8 +1423,10 @@ def build_retrieval_stack(
     _ = image_proxy_model
     kb_file = Path(kb_path)
     max_blocks = max_blocks if max_blocks is not None else _env_max_blocks()
+    explicit_doc_keywords = doc_keywords is not None
     doc_keywords = doc_keywords if doc_keywords is not None else _env_demo_keywords()
     skip_image = _env_skip_image() if skip_image is None else skip_image
+    chinese_vision = not skip_image and os.environ.get('FINANCE_VISION_BACKEND', image_backend) == 'chinese_clip'
 
     base_hash = _hash_file(kb_file)
     subset_tag = ""
@@ -869,24 +1441,55 @@ def build_retrieval_stack(
         flush=True,
     )
     blocks = store.load(max_blocks=max_blocks, doc_keywords=doc_keywords)
-    if not blocks and doc_keywords:
+    if not blocks and doc_keywords and not chinese_vision and not explicit_doc_keywords:
         print("关键词未命中文档，回退为仅按 FINANCE_MAX_BLOCKS 截断加载…", flush=True)
         subset_tag = hashlib.md5(f"{max_blocks}|FALLBACK".encode("utf-8")).hexdigest()[:10]
         kb_hash = f"{base_hash}_demo{subset_tag}"
         blocks = store.load(max_blocks=max_blocks or 8000, doc_keywords=None)
     print(f"已加载文本块: {len(blocks)}", flush=True)
-    if not blocks:
+    visual_pages = None
+    manifest_path = kb_file.parent / 'kb_v3_manifest.json'
+    if chinese_vision and manifest_path.is_file():
+        from .visual_pages import build_visual_pages
+        visual_pages = build_visual_pages(manifest_path, blocks,
+            allowed_roots=(kb_file.parent, Path(__file__).resolve().parents[2] / 'output/kb_v3/parsed'),
+            selected_versions={b['document_version'] for b in blocks}
+                if doc_keywords or (subset_tag and blocks) else None,
+            source_keywords=doc_keywords)
+    if not blocks and not visual_pages:
         raise ValueError(
             "精简加载后知识块为 0。请放宽 FINANCE_DEMO_KEYWORDS 或增大 FINANCE_MAX_BLOCKS。"
         )
 
     embed_device = resolve_embed_device()
-    text = TextRetriever(model_name=text_model, cache_dir=cache_dir, kb_hash=kb_hash, device=embed_device)
-    text.build(blocks, force_rebuild=force_rebuild)
+    snapshot_id = blocks[0].get("snapshot_id") if blocks else None
+    snapshot_config = {}
+    if snapshot_id and manifest_path.is_file():
+        from dataclasses import asdict
+        from src.pipeline.snapshots import read_manifest
+        manifest = read_manifest(manifest_path)
+        if manifest.snapshot_id != snapshot_id:
+            raise ValueError("文本切块与索引快照身份不一致")
+        snapshot_config = asdict(manifest.config)
+    text = TextRetriever(
+        model_name=text_model,
+        cache_dir=cache_dir,
+        kb_hash=kb_hash,
+        device=embed_device,
+        snapshot_id=snapshot_id,
+        snapshot_config=snapshot_config,
+    ) if blocks else _EmptyImageRetriever()
+    if blocks:
+        text.build(blocks, force_rebuild=force_rebuild)
 
     if skip_image:
         image = _EmptyImageRetriever()
         print("已跳过图像检索塔（FINANCE_SKIP_IMAGE）。", flush=True)
+    elif os.environ.get("FINANCE_VISION_BACKEND", image_backend) == "chinese_clip":
+        from .vision import ChineseVisionRetriever
+        image = ChineseVisionRetriever(cache_dir=cache_dir, device=embed_device)
+        image.build(blocks=blocks, page_images=store.page_images, force_rebuild=force_rebuild,
+                    visual_pages=visual_pages)
     else:
         image_model = resolve_colpali() if image_backend == "colpali" else resolve_clip_model()
         image = VisionPageRetriever(
@@ -896,6 +1499,8 @@ def build_retrieval_stack(
             model_name=image_model,
             text_proxy_model=text_model,
             device=embed_device,
+            snapshot_id=snapshot_id,
+            snapshot_config=snapshot_config,
         )
         image.build(blocks=blocks, page_images=store.page_images, force_rebuild=force_rebuild)
 
@@ -908,5 +1513,24 @@ def build_retrieval_stack(
             neo4j_user=neo4j_user,
             neo4j_password=neo4j_password,
         )
-    hybrid = HybridRetriever(fusion_retriever=fusion, graph_retriever=graph_retriever)
+    sparse = SparseRetriever(store.blocks)
+    structured = StructuredRetriever(store.blocks)
+    from .lightrag_channel import build_lightrag_retriever
+
+    graph_channel = build_lightrag_retriever(store.blocks)
+    if (os.getenv("FINANCE_KG_PILOT_ENABLED") or "").strip().lower() in {"1", "true", "yes"}:
+        from scripts.build_budgeted_kg import DEFAULT_DB, KGCheckpoint
+        from .kg_pilot_channel import KGPilotRetriever
+
+        checkpoint = KGCheckpoint(Path(os.getenv("FINANCE_KG_PILOT_DB") or DEFAULT_DB),
+                                  recover_interrupted=False)
+        graph_channel = KGPilotRetriever(store.blocks, checkpoint)
+
+    hybrid = HybridRetriever(
+        fusion_retriever=fusion,
+        graph_retriever=graph_retriever,
+        sparse_retriever=sparse,
+        structured_retriever=structured,
+        lightrag_retriever=graph_channel,
+    )
     return store, text, image, hybrid

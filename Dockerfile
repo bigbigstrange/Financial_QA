@@ -1,44 +1,22 @@
-# 金融问答批量生成镜像（CPU；一键运行 main.py 输出 qa_results.json）
-FROM ubuntu:22.04
+FROM node:22-bookworm-slim AS frontend
+WORKDIR /frontend
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
 
-ENV PYTHONUNBUFFERED=1
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONDONTWRITEBYTECODE=1
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.10 \
-    python3.10-dev \
-    python3-pip \
-    git \
-    ca-certificates \
-    build-essential \
-    cmake \
-    ninja-build \
-    libgl1 \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender1 \
-    libgomp1 \
-    tesseract-ocr \
-    tesseract-ocr-chi-sim \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN ln -sf /usr/bin/python3.10 /usr/bin/python3 && \
-    ln -sf /usr/bin/python3.10 /usr/bin/python
-
+FROM python:3.11-slim-bookworm
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONUTF8=1
 WORKDIR /app
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-COPY . /app/
-
-RUN mkdir -p /app/data /app/output /app/test /app/vector_cache && \
-    chmod +x /app/scripts/*.sh
-
-ENV MMD_PATH=/app/output/knowledge_base.json
-ENV CACHE_DIR=/app/vector_cache
-
-CMD ["python", "main.py"]
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 libglib2.0-0 libgomp1 tesseract-ocr tesseract-ocr-chi-sim \
+    && rm -rf /var/lib/apt/lists/*
+COPY requirements-linux.lock ./
+RUN pip install --no-cache-dir --require-hashes \
+    --extra-index-url https://download.pytorch.org/whl/cpu -r requirements-linux.lock
+COPY . .
+COPY --from=frontend /frontend/dist ./frontend/dist
+RUN useradd --uid 10001 --create-home finance && \
+    mkdir -p output vector_cache data_runtime && chown -R finance:finance /app
+USER finance
+CMD ["python", "-m", "app.main"]

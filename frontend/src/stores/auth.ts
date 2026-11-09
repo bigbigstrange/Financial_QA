@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { api, getToken, setToken } from '@/api/client'
+import { api, getToken, revokeSession, setToken } from '@/api/client'
 
 export interface UserInfo {
   id: number
@@ -35,11 +35,12 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function fetchMe() {
-    if (!token.value) return
     user.value = await api<UserInfo>('/api/auth/me')
+    token.value = getToken()
   }
 
-  function logout() {
+  async function logout() {
+    try { await revokeSession() } catch { /* local logout still proceeds */ }
     token.value = null
     user.value = null
     setToken(null)

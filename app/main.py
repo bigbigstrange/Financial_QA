@@ -32,6 +32,8 @@ _demo_flag = (os.environ.get("FINANCE_WEB_DEMO") or "1").strip().lower() not in 
     "n",
 }
 _has_api_key = bool(
+    (os.environ.get("ARK_API_KEY") or os.environ.get("ARK_API_KEY_FILE") or "").strip()
+    if (os.environ.get("FINANCE_LLM_PROVIDER") or "").lower() == "ark" else
     (os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("FINANCE_API_KEY") or "").strip()
 )
 if _demo_flag:
@@ -67,11 +69,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import auth, chat, ops
+from app.api import auth, chat, documents, evidence, ops, runs
 from app.core.config import get_settings
 from app.core.logging import setup_logging
 from app.db.init_db import init_db
+from app.db.session import SessionLocal
 from app.services.qa_runtime import qa_runtime
+from app.services.run_service import run_service
 
 settings = get_settings()
 setup_logging()
@@ -81,13 +85,15 @@ setup_logging()
 async def lifespan(_app: FastAPI):
     # 只做轻量初始化；模型加载放到 main() 主线程，避免 Windows 后台线程闪退
     init_db()
+    with SessionLocal() as db:
+        run_service.recover_interrupted_runs(db)
     yield
 
 
 app = FastAPI(title=settings.app_name, version="2.0.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origin_list or ["*"],
+    allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -96,6 +102,9 @@ app.add_middleware(
 app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(chat.router, prefix=settings.api_prefix)
 app.include_router(ops.router, prefix=settings.api_prefix)
+app.include_router(runs.router, prefix=settings.api_prefix)
+app.include_router(documents.router, prefix=settings.api_prefix)
+app.include_router(evidence.router, prefix=settings.api_prefix)
 
 
 @app.get("/api/health")
@@ -130,13 +139,16 @@ def main() -> None:
     print(settings.app_name)
     print(f"API:  http://{settings.host}:{settings.port}/api")
     print(f"Docs: http://{settings.host}:{settings.port}/docs")
-    print(f"Admin: {settings.bootstrap_admin_user} / {settings.bootstrap_admin_password}")
+    print(f"Admin user: {settings.bootstrap_admin_user} (password not logged)")
     print(f"Demo memory mode: {settings.finance_web_demo}")
     print(f"Embed device: {os.environ.get('FINANCE_EMBED_DEVICE', 'auto')}")
     print(f"Gen backend: {os.environ.get('FINANCE_GEN_BACKEND', 'auto')}")
     print(f"Rerank backend: {os.environ.get('FINANCE_RERANK_BACKEND', 'auto')}")
-    print(f"DeepSeek model: {os.environ.get('DEEPSEEK_MODEL', 'deepseek-v4-flash')}")
-    print(f"API key loaded: {'yes' if _has_api_key else 'no'}")
+    provider = (os.environ.get('FINANCE_LLM_PROVIDER') or 'deepseek').lower()
+    configured_model = (os.environ.get('ARK_MODEL', 'doubao-seed-2-1-pro-260915') if provider == 'ark'
+                        else os.environ.get('DEEPSEEK_MODEL', 'deepseek-v4-flash'))
+    print(f"Configured LLM: {provider} / {configured_model}")
+    print(f"API credentials configured: {'yes' if _has_api_key else 'no'}")
     print(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', '<unset>')}")
     print("=" * 56)
 
@@ -150,10 +162,15 @@ def main() -> None:
     if not skip_warm:
         print("[platform] loading QA engine in main thread (may take 1-3 min)...", flush=True)
         try:
-            qa_runtime.ensure_loaded()
+            init_db()
+            with SessionLocal() as db:
+                knowledge = run_service._knowledge_ref(db)
+            qa_runtime.ensure_loaded(
+                manifest_path=knowledge.manifest_path if knowledge else None
+            )
             print("[platform] QA engine ready.", flush=True)
         except Exception as e:
-            print(f"[platform] warmup failed, will retry on first request: {e}", flush=True)
+            print(f"[platform] warmup failed ({type(e).__name__}); will retry on first request", flush=True)
 
     # 传 app 对象，避免再 import 一遍丢环境变量副作用
     uvicorn.run(app, host=settings.host, port=settings.port, log_level="info")

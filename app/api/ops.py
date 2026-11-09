@@ -85,7 +85,9 @@ def upsert_profile(
 @router.post("/models/promote")
 def promote(body: PromoteRequest, admin: Annotated[User, Depends(require_admin)]) -> dict[str, Any]:
     try:
-        prof = model_registry.promote(body.profile_name, eval_run_id=body.eval_run_id, force=body.force)
+        if body.force:
+            raise ValueError("公开晋级接口禁止跳过质量门禁；回退请使用 /models/rollback")
+        prof = model_registry.promote(body.profile_name, eval_run_id=body.eval_run_id)
         qa_runtime.reload(body.profile_name)
         return {"ok": True, "profile": prof}
     except Exception as e:

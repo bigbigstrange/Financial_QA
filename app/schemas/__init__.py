@@ -2,15 +2,17 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, EmailStr, Field
+
+from src.contracts import ErrorCode, Evidence, ModelSnapshot, RunStatus
 
 
 class RegisterRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=64)
     email: EmailStr
-    password: str = Field(..., min_length=6, max_length=128)
+    password: str = Field(..., min_length=12, max_length=128)
 
 
 class LoginRequest(BaseModel):
@@ -55,14 +57,14 @@ class MessageOut(BaseModel):
     content: str
     thinking: Optional[str] = None
     confidence: Optional[float] = None
-    evidence: List[dict[str, Any]] = []
+    evidence: List[dict[str, Any]] = Field(default_factory=list)
     latency_sec: Optional[float] = None
     model_profile: Optional[str] = None
     created_at: Optional[datetime] = None
 
 
 class ConversationDetail(ConversationOut):
-    messages: List[MessageOut] = []
+    messages: List[MessageOut] = Field(default_factory=list)
 
 
 class ChatRequest(BaseModel):
@@ -70,6 +72,8 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[int] = None
     show_thinking: bool = False
     top_k: int = Field(12, ge=1, le=30)
+    use_paid_model: bool = True
+    use_web_search: bool = True
 
 
 class ChatResponse(BaseModel):
@@ -77,8 +81,71 @@ class ChatResponse(BaseModel):
     user_message: MessageOut
     assistant_message: MessageOut
     elapsed_sec: float
-    memory: dict[str, Any] = {}
+    memory: dict[str, Any] = Field(default_factory=dict)
     profile: Optional[str] = None
+    run_id: Optional[str] = None
+
+
+class RunCreateRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=2000)
+    conversation_id: Optional[int] = None
+    top_k: int = Field(12, ge=1, le=30)
+    idempotency_key: Optional[str] = Field(None, min_length=8, max_length=128)
+    show_thinking: bool = False
+    use_paid_model: bool = True
+    use_web_search: bool = True
+
+
+class ReviewApprovalRequest(BaseModel):
+    decision: Literal["accept", "decline"]
+
+
+class ReviewApprovalOut(BaseModel):
+    run_id: str
+    decision: Literal["accept", "decline"]
+    ticket_id: Optional[str] = None
+    ticket_status: Optional[str] = None
+
+
+class RunOut(BaseModel):
+    run_id: str
+    status: RunStatus
+    answer: Optional[str] = None
+    evidence: List[Evidence] = Field(default_factory=list)
+    confidence: Optional[float] = None
+    thinking: Optional[str] = None
+    model_snapshot: Optional[ModelSnapshot] = None
+    knowledge_snapshot_id: Optional[str] = None
+    error_code: Optional[ErrorCode] = None
+    error_message: Optional[str] = None
+    latency_sec: Optional[float] = None
+    memory: dict[str, Any] = Field(default_factory=dict)
+    # ---- Agent 编排可观测（阶段 C）----
+    agent_mode: Optional[str] = None
+    route: Optional[str] = None
+    retry_retrieve: int = 0
+    retry_generate: int = 0
+    trace: List[dict[str, Any]] = Field(default_factory=list)
+    verified: bool = False
+
+
+class RunTraceOut(BaseModel):
+    """Agent 决策轨迹：路由 → 各节点耗时与决策 → 重试计数。"""
+
+    run_id: str
+    agent_mode: Optional[str] = None
+    route: Optional[str] = None
+    retry_retrieve: int = 0
+    retry_generate: int = 0
+    trace: List[dict[str, Any]] = Field(default_factory=list)
+    verified: bool = False
+    note: Optional[str] = None
+
+
+class ErrorResponse(BaseModel):
+    code: ErrorCode
+    message: str
+    retryable: bool = False
 
 
 class FeedbackRequest(BaseModel):
@@ -134,3 +201,52 @@ class EvalRunOut(BaseModel):
     finished_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
+
+
+class DocumentVersionOut(BaseModel):
+    id: str
+    status: str
+    source_sha256: str
+    parser_name: str
+    parser_version: str
+    created_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class DocumentOut(BaseModel):
+    document_id: str
+    display_name: str
+    status: str
+    active_version_id: Optional[str] = None
+    versions: List[DocumentVersionOut] = Field(default_factory=list)
+
+
+class DocumentIngestResult(BaseModel):
+    document_id: str
+    display_name: str
+    status: str
+    active_version_id: Optional[str] = None
+    created_version_id: str
+
+
+class EvidenceDetailOut(BaseModel):
+    evidence_kind: str = 'text'
+    source_url: Optional[str] = None
+    vision_page: int | None = None
+    image_available: bool = False
+    evidence_id: str
+    document_id: Optional[str] = None
+    document_version: Optional[str] = None
+    block_id: Optional[str] = None
+    source_name: Optional[str] = None
+    page_no: Optional[int] = None
+    page_end: Optional[int] = None
+    bbox: Optional[List[float]] = None
+    section_path: Optional[str] = None
+    structural_locator: Optional[str] = None
+    text: str = ""
+    table_headers: List[str] = Field(default_factory=list)
+    table_rows: List[List[Any]] = Field(default_factory=list)
+    unit: Optional[str] = None
+    quality_flags: List[str] = Field(default_factory=list)

@@ -6,9 +6,9 @@ import { useAuthStore } from '@/stores/auth'
 const auth = useAuthStore()
 const router = useRouter()
 const mode = ref<'login' | 'register'>('login')
-const username = ref('admin')
-const email = ref('admin@example.com')
-const password = ref('admin123')
+const username = ref('')
+const email = ref('')
+const password = ref('')
 const error = ref('')
 const loading = ref(false)
 
@@ -41,7 +41,7 @@ async function submit() {
         </div>
       </div>
       <h1>{{ mode === 'login' ? '登录' : '注册' }}</h1>
-      <p>默认管理员 admin / admin123（首次启动自动创建）</p>
+      <p>使用已创建的账号登录；部署管理员凭据只在服务端配置。</p>
       <div v-if="error" class="error">{{ error }}</div>
       <form @submit.prevent="submit">
         <div class="field">
@@ -54,7 +54,9 @@ async function submit() {
         </div>
         <div class="field">
           <label>密码</label>
-          <input v-model="password" type="password" required autocomplete="current-password" />
+          <input v-model="password" type="password" required
+            :minlength="mode === 'register' ? 12 : undefined"
+            :autocomplete="mode === 'register' ? 'new-password' : 'current-password'" />
         </div>
         <button class="btn" style="width: 100%" :disabled="loading">
           {{ loading ? '提交中…' : mode === 'login' ? '进入平台' : '创建账号' }}
