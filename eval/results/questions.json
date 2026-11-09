@@ -1,0 +1,157 @@
+{
+  "metrics": {
+    "generated_at": "2026-11-09T08:33:35+00:00",
+    "engine": "demo",
+    "total": 20,
+    "answered": 0,
+    "refused": 20,
+    "refusal_rate": 1.0,
+    "errors": 0,
+    "latency_p50_ms": 2.0,
+    "latency_p95_ms": 2.72,
+    "latency_mean_ms": 15.63,
+    "note": "题库无人工标准答案与证据出处，本报告只含运行指标，不含准确率"
+  },
+  "rows": [
+    {
+      "id": "q0130",
+      "question": "请详细说明掌上银行中“基金”功能的主要服务内容以及进行基金认购的具体操作流程。",
+      "label_status": "unlabeled",
+      "answered": false,
+      "latency_ms": 279.65
+    },
+    {
+      "id": "q0021",
+      "question": "中国太保在2023年中期业绩报告中如何描述其“大区域”战略在大湾区的具体实施路径？",
+      "label_status": "unlabeled",
+      "answered": false,
+      "latency_ms": 2.72
+    },
+    {
+      "id": "q0099",
+      "question": "基于文档内容，如果申报单位在提交工伤预防项目申请后，发现材料有误但尚未受理，应如何操作以避免影响审核？",
+      "label_status": "unlabeled",
+      "answered": false,
+      "latency_ms": 1.0
+    },
+    {
+      "id": "q0051",
+      "question": "如果用人单位在办理在职停保时，参保人员已达到法定退休年龄但无法在南京市享受养老退休待遇，应选择哪种停保原因？",
+      "label_status": "unlabeled",
+      "answered": false,
+      "latency_ms": 2.0
+    },
+    {
+      "id": "q0017",
+      "question": "中国太保2023年上半年在“大健康”和“大数据”战略方面有哪些具体举措，并如何协同提升保险主业？",
+      "label_status": "unlabeled",
+      "answered": false,
+      "latency_ms": 2.0
+    },
+    {
+      "id": "q0163",
+      "question": "上海浦东发展银行公司网银的“账户设置”功能中，“单笔支付限额”栏位设置为“0”时表示什么？",
+      "label_status": "unlabeled",
+      "answered": false,
+      "latency_ms": 1.0
+    },
+    {
+      "id": "q0121",
+      "question": "掌上银行提供哪些账户查询功能，以及如何查看账户总览和组合明细？",
+      "label_status": "unlabeled",
+      "answered": false,
+      "latency_ms": 1.0
+    },
+    {
+      "id": "q0109",
+      "question": "建行网银盾首次使用时需要完成哪些设置步骤，以及如果第一次插入后未自动弹出提示应如何处理？",
+      "label_status": "unlabeled",
+      "answered": false,
+      "latency_ms": 1.5
+    },
+    {
+      "id": "q0119",
+      "question": "请总结建行网银盾使用手册中第一部分“重点注意事项”的主要内容。",
+      "label_status": "unlabeled",
+      "answered": false,
+      "latency_ms": 2.52
+    },
+    {
+      "id": "q0152",
+      "question": "数字证书在线申请平台的客服电话是多少，以及用户在什么情况下应该联系客服？",
+      "label_status": "unlabeled",
+      "answered": false,
+      "latency_ms": 2.0
+    },
+    {
+      "id": "q0160",
+      "question": "在上海浦东发展银行公司网银中，如果某操作员被设置为“只能查询”某账户权限，则该操作员能否进行该账户的转账或授权操作？",
+      "label_status": "unlabeled",
+      "answered": false,
+      "latency_ms": 2.0
+    },
+    {
+      "id": "q0034",
+      "question": "中国农业银行K宝在IE浏览器中注册证书时可能遇到哪些问题，以及如何通过手动操作解决这些问题？",
+      "label_status": "unlabeled",
+      "answered": false,
+      "latency_ms": 1.0
+    },
+    {
+      "id": "q0144",
+      "question": "中国人寿保险（集团）公司2022年在公益慈善方面的主要活动和成效有哪些？请总结其通过中国人寿慈善基金会和其他成员单位开展的关键项目。",
+      "label_status": "unlabeled",
+      "answered": false,
+      "latency_ms": 2.51
+    },
+    {
+      "id": "q0057",
+      "question": "请描述医疗（生育）保险网上办事中，单位中心模块包含哪些主要功能？这些功能如何支持用人单位日常操作？",
+      "label_status": "unlabeled",
+      "answered": false,
+      "latency_ms": 1.01
+    },
+    {
+      "id": "q0149",
+      "question": "申请中企云链证书时，用户需要选择证书购买数量为2张，为什么必须选择这个数量，以及这个要求如何与业务需求关联？",
+      "label_status": "unlabeled",
+      "answered": false,
+      "latency_ms": 1.51
+    },
+    {
+      "id": "q0014",
+      "question": "中国太保2023年上半年在寿险和产险业务方面分别有哪些关键业绩表现？",
+      "label_status": "unlabeled",
+      "answered": false,
+      "latency_ms": 2.0
+    },
+    {
+      "id": "q0068",
+      "question": "小微企业通过“中国国际贸易单一窗口”线上申领出口信用保险保单时，如果插入法人卡提示“卡片无效”，应如何操作？",
+      "label_status": "unlabeled",
+      "answered": false,
+      "latency_ms": 2.01
+    },
+    {
+      "id": "q0070",
+      "question": "小微企业在“中国国际贸易单一窗口”进行出口信用保险投保时，如果遇到协议打开后显示空白，应如何处理？请列出所有可能的解决方案。",
+      "label_status": "unlabeled",
+      "answered": false,
+      "latency_ms": 1.51
+    },
+    {
+      "id": "q0141",
+      "question": "中国人寿保险（集团）公司在2022年通过哪些具体措施推进乡村振兴，并如何将金融专业优势与“五大振兴”需求相结合？",
+      "label_status": "unlabeled",
+      "answered": false,
+      "latency_ms": 1.52
+    },
+    {
+      "id": "q0182",
+      "question": "如何在工行澳门个人网上银行完成首次登录、修改登录密码以及设置登录别名？",
+      "label_status": "unlabeled",
+      "answered": false,
+      "latency_ms": 2.16
+    }
+  ]
+}
