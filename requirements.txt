@@ -83,5 +83,8 @@ psycopg[binary]==3.3.6
 # xformers==0.0.22
 
 # MCP server（把检索/问答/证据暴露为 MCP 工具）
+# 注意：mcp 1.9.4 依赖 pydantic 的内部 API，2.14 起被移除，故固定 pydantic 上限
 mcp==1.9.4
+pydantic==2.13.5
+
 
