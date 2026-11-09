@@ -69,7 +69,7 @@ jobs:
             echo "::error title=pytest::$line"
           done
           echo "---- traceback context ----"
-          sed -n '/=* ERRORS *=*/,/short test summary/p' pytest.log | head -45 | while IFS= read -r line; do
+          awk '/=* ERRORS *=*/,/short test summary/' pytest.log | tail -14 | while IFS= read -r line; do
             echo "::error title=pytest-trace::$line"
           done
           tail -20 pytest.log
@@ -97,5 +97,6 @@ jobs:
       - name: Build
         working-directory: frontend
         run: npm run build
+
 
 
