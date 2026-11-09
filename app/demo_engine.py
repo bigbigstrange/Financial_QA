@@ -141,11 +141,17 @@ def answer_demo(question: str, question_id: str) -> dict[str, Any]:
     }]
 
     best_chunk, best_score = (hits[0] if hits else (None, 0.0))
+    # 字段同时满足两套消费方：
+    # - 前端 / MCP 工具：chunk_id、source_doc、section、score、content
+    # - 证据持久化（legacy 适配器）：block_id、text、structure_path
     evidence = [
         {
             "chunk_id": c.chunk_id,
+            "block_id": c.chunk_id,
             "source_doc": c.doc,
             "section": c.section,
+            "structure_path": c.section,
+            "text": c.text,
             "content": c.text[:400],
             "score": s,
         }
@@ -194,6 +200,7 @@ def answer_demo(question: str, question_id: str) -> dict[str, Any]:
         "latency_sec": round(time.time() - started, 3),
         "_local_only": True,
     }
+
 
 
 

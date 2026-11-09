@@ -1,4 +1,4 @@
-# 一键演示环境：不接大模型、不接数据库、不需要任何密钥。
+﻿# 一键演示环境：不接大模型、不接数据库、不需要任何密钥。
 #
 #   docker compose -f docker-compose.demo.yml up --build
 #   打开 http://127.0.0.1:8002  （API 文档 http://127.0.0.1:8002/docs）
@@ -17,7 +17,8 @@ services:
       dockerfile: Dockerfile
     image: financial-qa:demo
     environment:
-      APP_ENV: development
+      APP_ENV: production
+      HOST: 0.0.0.0
       PORT: "8000"
       FINANCE_DEMO_MODE: "1"
       FINANCE_DISABLE_PAID_API: "1"
@@ -47,3 +48,5 @@ services:
 
 volumes:
   demo_data:
+
+
