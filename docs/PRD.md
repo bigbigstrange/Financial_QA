@@ -1,4 +1,4 @@
-﻿# Financial QA 项目可信度改造 PRD
+# Financial QA 项目可信度改造 PRD
 
 > 面向 Agent 岗求职的「可部署 / 可演示 / 可验证」项目改造方案
 
@@ -364,7 +364,7 @@ jobs:
 | 编号 | 任务 | 状态 | 证据 / 缺口 |
 |---|---|---|---|
 | P0-1 | 仓库清理与门面重写 | ✅ | 删 `.env`/业务数据；补 MIT LICENSE、`.gitignore`；README 重写 |
-| P0-2 | 一键启动 + Demo 模式 | 🟡 | demo 引擎 + `docker-compose.demo.yml` 就绪；**镜像构建耗时过长，尚未完成端到端验收** |
+| P0-2 | 一键启动 + Demo 模式 | ✅ | 镜像构建通过；容器 healthy；登录后提问返回 `verified=true` 与引用；语料外问题正确拒答（`docker-compose.demo.yml`，端口 8002） |
 | P0-3 | CI 流水线 | ✅ | ruff + pytest + 前端构建；三次全绿；失败写 check-run 注解；新增覆盖率门槛与 coverage.xml 上传 |
 | P0-4 | 演示数据包 | 🟡 | 4 篇示例语料（16 切块）；预构建索引未提供（演示模式不需要） |
 | P1-1 | 评测体系 | 🟡 | 示例语料 23 题（Recall@3 94.7% / 拒答 100%）；新增**题库级运行指标** harness（500 题题库）；**准确率仍缺人工标注** |
@@ -380,7 +380,7 @@ jobs:
 
 | 检查项 | 状态 | 说明 |
 |---|---|---|
-| 干净机器 `docker compose up` 成功 | 🟡 | 构建进行中，未完成验收 |
+| 干净机器 `docker compose up` 成功 | ✅ | 演示用 compose 已实测：构建 → healthy → 登录 → 提问 → 拒答 |
 | 无 Key 可完成带引用问答 | ✅ | 演示模式实测 |
 | `eval.py` 与 README 数字一致 | ✅ | 示例语料口径一致 |
 | CI 全绿 | ✅ | — |
