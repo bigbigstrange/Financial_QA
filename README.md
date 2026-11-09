@@ -1,4 +1,4 @@
-﻿# 金融多模态知识与业务协作 Agent 平台
+# 金融多模态知识与业务协作 Agent 平台
 
 > 面向金融业务文档的多模态检索与问答平台：**从 923 份多格式文档，到一条可溯源、可拒答、可审计的答案。**
 >
@@ -7,7 +7,7 @@
 [![ci](https://github.com/bigbigstrange/Financial_QA/actions/workflows/ci.yml/badge.svg)](https://github.com/bigbigstrange/Financial_QA/actions/workflows/ci.yml)
 ![license](https://img.shields.io/badge/license-MIT-blue.svg)
 ![python](https://img.shields.io/badge/python-3.11-3776AB.svg)
-![tests](https://img.shields.io/badge/tests-483%20passed%20%2F%204%20skipped-brightgreen.svg)
+![tests](https://img.shields.io/badge/tests-490%20passed%20%2F%204%20skipped-brightgreen.svg)
 ![status](https://img.shields.io/badge/status-local%20demo%20verified-orange.svg)
 
 ---
@@ -83,8 +83,8 @@ flowchart TD
 
 | 指标 | 数值 | 出处 |
 |---|---|---|
-| 测试 | **483 passed / 4 skipped / 12 subtests** | `pytest -q`（约 14s） |
-| 代码规模 | **216 个 Python 文件**（app 30 / src 46 / tests 80 / scripts 57） | `git ls-files` 口径 |
+| 测试 | **490 passed / 4 skipped / 12 subtests** | `pytest -q`（约 13s） |
+| 代码规模 | **221 个 Python 文件**（app 30 / src 46 / tests 81 / scripts 58 / mcp_server 3） | `git ls-files` 口径 |
 | 语料规模 | **920 份**业务文件 → **30,406** 检索切块 → **17,957** 张页图 | `docs/baseline/2026-09-29-delivery-audit.md` |
 | 真实模型评测 | 50 题完成 **43 题**（第 44 题预算耗尽） | `output/quality/financial50-live-v1.json` |
 | 延迟 | **p50 30.5s / p95 60.2s** | 同上 |
@@ -152,6 +152,51 @@ python scripts/eval_demo.py
 
 ---
 
+## MCP Server（可被任何 Agent 客户端调用）
+
+把「检索 / 问答 / 证据」暴露成标准 **MCP（Model Context Protocol）** 工具，**不需要 API Key**：
+
+| 工具 | 作用 | 关键返回 |
+|---|---|---|
+| `search_corpus(query, top_k)` | 检索语料，定位相关条款 | `chunk_id` / `score` / `snippet` |
+| `ask(question)` | 回答并给出引用，证据不足则拒答 | `answer` / `verified` / `citations` |
+| `get_evidence(chunk_id)` | 按 id 取回原文核对 | `found` / `text` |
+| `list_documents()` | 语料覆盖范围 | `document` / `chunks` |
+
+接入 Claude Desktop / Cursor：
+
+```json
+{
+  "mcpServers": {
+    "financial-qa": {
+      "command": "python",
+      "args": ["-m", "mcp_server.server"],
+      "cwd": "C:/path/to/Financial_QA"
+    }
+  }
+}
+```
+
+验证（真的起子进程、走 stdio 完成握手 → 列工具 → 调工具）：
+
+```bash
+python -m mcp_server.smoke_client
+```
+
+```text
+- ask: 回答一个金融业务问题，返回答案、置信度与引用来源。
+- get_evidence: 按 chunk_id 取回切块原文与出处，用于核对答案是否被原文支持。
+=== call: refusal ===
+refused=True answer=根据现有示例资料无法回答该问题（证据不足，已拒答）。
+OK: MCP server 与客户端握手、列工具、调工具全部通过
+```
+
+**两个设计取舍**：
+1. **工具层与引擎层解耦**——三个工具只依赖 `search()` / `answer_demo()`，换成生产检索栈时契约不变；
+2. **拒答由服务端保证**，不依赖提示词——模型再想编，也拿不到证据。
+
+---
+
 ## 目录结构
 
 ```text
@@ -163,6 +208,7 @@ Financial_QA/
 │   └── agent/          # LangGraph 节点、条件边、提示词、持久节点日志
 ├── frontend/           # Vue3：登录、问答、轨迹、原文原图、取消与运维
 ├── demo/corpus/        # 演示用示例语料（虚构条款，非真实业务数据）
+├── mcp_server/         # MCP Server：检索 / 问答 / 证据 三个工具（stdio）
 ├── eval/               # 评测集 + 结果（metrics.json / report.md）
 ├── tests/              # pytest：单测 + 真实 HTTP 验收
 ├── scripts/            # 数据处理、评测、备份、回归
@@ -238,6 +284,7 @@ run、事件、LangGraph 检查点与节点结果持久化；恢复时复用已�
 ## License
 
 MIT © 2026 张艳
+
 
 
 

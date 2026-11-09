@@ -81,3 +81,7 @@ psycopg[binary]==3.3.6
 # flash-attn==2.3.2
 # triton==2.1.0
 # xformers==0.0.22
+
+# MCP server（把检索/问答/证据暴露为 MCP 工具）
+mcp==1.9.4
+
