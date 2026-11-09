@@ -7,6 +7,8 @@
 | `architecture.png` | 三段式架构图：离线索引 → 在线检索 → 输出与约束 | `python scripts/make_evidence.py` |
 | `metrics.png` | 示例语料离线评测结果（Recall@3 / 拒答准确率 / 耗时） | 同上（读取 `eval/results/metrics.json`） |
 | `terminal-demo.gif` | 真实运行截图：两次命中生成 + 一次证据不足拒答 | 同上（调用 `app.demo_engine` 实跑） |
+| `trace.png` | 一次真实问答的 12 个节点时序（30,406 切块知识库） | `python scripts/render_trace.py --trace <trace.json>` |
+| `ci-status.png` | CI 三 job 全绿 + 覆盖率 67.25% | `python scripts/render_ci_status.py` |
 
 ## 为什么放图
 

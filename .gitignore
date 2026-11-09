@@ -46,3 +46,6 @@ tools/
 .idea/
 .DS_Store
 Thumbs.db
+
+# 本地实跑覆盖（含真实模型与知识库挂载）
+docker-compose.local.yml
