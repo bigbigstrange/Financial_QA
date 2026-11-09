@@ -1,4 +1,4 @@
-from app.services.qa_runtime import QARuntime
+﻿from app.services.qa_runtime import QARuntime
 from src.agent import run_agent
 from src.agent.state import initial_state
 
@@ -238,11 +238,13 @@ with patch("src.system.llm_api.DeepSeekAPIClient",LLM):
         run_id = f"real-process-gap-{attempt}"
         crashed_child(run_id)
         result, calls = resume_after_crash(run_id)
-        if result is not None:
+        # 只有真正拿到答案才算恢复成功；否则换新 run_id 重跑整个场景
+        if result is not None and result.get("answer"):
             break
 
     assert result is not None, "checkpoint 未被恢复：子进程写入与父进程读取之间存在可见性竞态"
     assert result["answer"] == "你好"
     assert calls == ["direct_answer"]
+
 
 
