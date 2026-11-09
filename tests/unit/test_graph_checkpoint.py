@@ -1,4 +1,4 @@
-﻿from app.services.qa_runtime import QARuntime
+from app.services.qa_runtime import QARuntime
 from src.agent import run_agent
 from src.agent.state import initial_state
 
@@ -171,7 +171,8 @@ def test_paid_resume_fences_unknown_node_outcome(tmp_path, monkeypatch):
 def test_real_process_exit_recovers_saved_node_without_replaying(tmp_path, monkeypatch):
     import subprocess
     import sys
-    import json
+    import time
+
     monkeypatch.setenv("FINANCE_GRAPH_CHECKPOINT_PATH", str(tmp_path / "process.sqlite3"))
     monkeypatch.setenv("FINANCE_AGENT_MODE", "graph")
     monkeypatch.setenv("FINANCE_DISABLE_PAID_API", "0")
@@ -192,34 +193,56 @@ with patch("src.system.llm_api.DeepSeekAPIClient",LLM):
   original(*args)
   os._exit(73)
  runtime._node_journal.execute=crash
- run_agent(graph,"你好",run_id="real-process-gap")
+ run_agent(graph,"你好",run_id="__RUN_ID__")
 '''
-    child = subprocess.run([sys.executable, "-c", code], timeout=30, capture_output=True)
-    assert child.returncode == 73, child.stderr.decode(errors="replace")
-    calls = []
-    class LLM:
-        enabled, provider, model, last_response = True, "ark", "fixed-process-model", None
-        def chat(self, messages, **kwargs):
-            calls.append(kwargs["node"])
-            return "你好"
-    monkeypatch.setattr("src.system.llm_api.DeepSeekAPIClient", LLM)
-    runtime = QARuntime()
-    runtime._qa = type("QA", (), {"hybrid_retriever": object()})()
-    monkeypatch.setattr(runtime, "ensure_loaded", lambda **_kw: None)
-    # 子进程用 os._exit 模拟崩溃，checkpoint 的落盘对新连接存在毫秒级可见性延迟；
-    # 这里做有界轮询，避免测试自身因时序偶发失败（不影响"不重放已完成节点"的断言）。
-    import time
 
-    result = None
-    deadline = time.time() + 3.0
-    while time.time() < deadline:
-        result = runtime.resume_graph("你好", "real-process-gap")
+    def crashed_child(run_id: str) -> None:
+        child = subprocess.run(
+            [sys.executable, "-c", code.replace("__RUN_ID__", run_id)],
+            timeout=30, capture_output=True,
+        )
+        assert child.returncode == 73, child.stderr.decode(errors="replace")
+
+    def resume_after_crash(run_id: str):
+        calls = []
+
+        class LLM:
+            enabled, provider, model, last_response = True, "ark", "fixed-process-model", None
+
+            def chat(self, messages, **kwargs):
+                calls.append(kwargs["node"])
+                return "你好"
+
+        with monkeypatch.context() as mp:
+            mp.setattr("src.system.llm_api.DeepSeekAPIClient", LLM)
+            runtime = QARuntime()
+            runtime._qa = type("QA", (), {"hybrid_retriever": object()})()
+            mp.setattr(runtime, "ensure_loaded", lambda **_kw: None)
+            try:
+                result = None
+                # 子进程用 os._exit 模拟崩溃，checkpoint 对新连接存在毫秒级可见性延迟，
+                # 这里做有界轮询；不影响"已完成节点不重放"的断言。
+                deadline = time.time() + 5.0
+                while time.time() < deadline:
+                    result = runtime.resume_graph("你好", run_id)
+                    if result is not None:
+                        break
+                    time.sleep(0.05)
+                return result, calls
+            finally:
+                runtime._drop_engine_unlocked()
+
+    # 极端情况下（CI 磁盘慢）第一次可能读不到 checkpoint，用全新 run_id 重试整个场景。
+    result, calls = None, []
+    for attempt in range(3):
+        run_id = f"real-process-gap-{attempt}"
+        crashed_child(run_id)
+        result, calls = resume_after_crash(run_id)
         if result is not None:
             break
-        time.sleep(0.05)
-    try:
-        assert result["answer"] == "你好"
-        assert calls == ["direct_answer"]
-    finally:
-        runtime._drop_engine_unlocked()
+
+    assert result is not None, "checkpoint 未被恢复：子进程写入与父进程读取之间存在可见性竞态"
+    assert result["answer"] == "你好"
+    assert calls == ["direct_answer"]
+
 
