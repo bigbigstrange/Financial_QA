@@ -358,12 +358,41 @@ jobs:
 
 ## 11. 执行记录
 
-| 日期 | 任务 | 状态 | 证据 |
-|---|---|---|---|
-| 2026-11-09 | P0-1 仓库清理与门面重写 | ✅ 完成 | 删除 .env / 业务数据；补 MIT LICENSE、.gitignore；README 重写（架构图、关键数字、3 步启动、评测边界） |
-| 2026-11-09 | 同步本地完整版 | ✅ 完成 | 213 个 Python 文件（app 29 / src 46 / tests 79 / scripts 56）；26 篇文档 |
-| 2026-11-09 | 测试可复现 | ✅ 完成 | 新增 `tests/conftest.py` 建临时库；`pytest -q` → **479 passed / 4 skipped** |
-| 2026-11-09 | P0-2 一键启动 + Demo 模式 | ✅ 完成 | `app/demo_engine.py` + `demo/corpus/` + `docker-compose.demo.yml`；无需 Key 可跑通检索→评分→拒答 |
-| 2026-11-09 | P0-3 CI 流水线 | ✅ 完成 | `.github/workflows/ci.yml`：ruff + pytest + 前端构建 |
-| 2026-11-09 | P1-1 评测体系 | ✅ 完成（示例语料） | `eval/dataset.jsonl` + `scripts/eval_demo.py` + `eval/results/`：Recall@3 94.7% / 拒答 100% |
+> 口径：只有**仓库里能找到证据**的才标 ✅；做了但没验收的标 🟡；没动的标 ⬜。
 
+| 编号 | 任务 | 状态 | 证据 / 缺口 |
+|---|---|---|---|
+| P0-1 | 仓库清理与门面重写 | ✅ | 删除 `.env` / 业务数据；补 MIT LICENSE、`.gitignore`；README 重写 |
+| P0-2 | 一键启动 + Demo 模式 | 🟡 | `app/demo_engine.py` + `demo/corpus/` + `docker-compose.demo.yml` 已就绪，**容器未实跑验收** |
+| P0-3 | CI 流水线 | ✅ | `.github/workflows/ci.yml`：ruff + pytest + 前端构建，三次全绿；失败会写 check-run 注解 |
+| P0-4 | 演示数据包 | 🟡 | 已有 4 篇示例语料（16 切块）；**预构建索引未提供**（演示模式不需要，但真实 KB 演示仍缺） |
+| P1-1 | 评测体系 | 🟡 | 已完成**示例语料** 23 题（Recall@3 94.7% / 拒答 100%）；**真实语料 50 题、92% / 2.1% 仍无出处** |
+| P1-2 | 迭代上限与超时 | ⬜ | `recursion_limit=32` 已存在且有测试；**`MAX_ITERATIONS=2` 未实现**（该表述属 Agentic RAG v3，尚未落地） |
+| P1-3 | 过程证据包 | 🟡 | 已有架构图 / 评测图 / 终端 GIF（3 类）；**缺 trace 时序图、CI 截图** |
+| P2-1 | 可观测 | ⬜ | 未接 Langfuse，`/ops` 页面未补 trace 下钻 |
+| P2-2 | MCP server | ✅ | `mcp_server/`：4 个 tool，stdio 实测握手通过，7 条契约测试 |
+| P2-3 | Agentic RAG v3 独立化 | ⬜ | 未换领域语料、未补 20 题评测 |
+| P3-1 | 演示视频 | ⬜ | 未录制 |
+| P3-2 | 技术文章 | ⬜ | 未撰写 |
+
+### 验收清单（DoD）对照
+
+| 检查项 | 状态 | 说明 |
+|---|---|---|
+| 干净机器 `docker compose up` 成功 | ⬜ | 仅提供 compose 文件，未实跑 |
+| 无 Key 可完成带引用问答 | ✅ | 演示模式实测 |
+| `eval.py` 与 README 数字一致 | ✅ | 示例语料口径一致 |
+| CI 全绿 | ✅ | — |
+| 覆盖率 ≥ 60% | ⬜ | 未接 `pytest-cov` |
+| README 首屏 3 图 + 1 GIF + 3 徽章 | ✅ | 架构图 / 评测图 / GIF + 5 个徽章 |
+| `docs/evidence/` 5 类证据齐全 | 🟡 | 3 / 5 |
+| 简历每个数字可指向文件 | ⬜ | 92% / 2.1% / 3.2s 仍无法在仓库复现 |
+| 仓库无密钥、无真实业务数据 | ✅ | `git ls-files` 检查通过；面试准备脚本已移除 |
+
+### 下一批优先级
+
+1. **P1-2**：在 Agentic RAG v3 补 `MAX_ITERATIONS=2` + 超时（否则简历那句话站不住）
+2. **真实语料 50 题评测**：把 92% / 2.1% 变成可复现数字，或按真实值改写简历
+3. **P0-2 验收**：`docker compose -f docker-compose.demo.yml up --build` 实跑一遍
+4. P2-1 可观测 / P2-3 v3 独立化
+5. P3 视频与文章
