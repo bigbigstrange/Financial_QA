@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 问答运行时：单例引擎 + 并发闸门 + 空闲卸载生成模型 + profile 热切换。
 
@@ -411,6 +411,13 @@ class QARuntime:
         use_paid_model: bool = True,
         use_web_search: bool = True,
     ) -> dict[str, Any]:
+        from app.core.config import get_settings
+
+        if get_settings().finance_demo_mode:
+            from app.demo_engine import answer_demo
+
+            return answer_demo(question, question_id)
+
         manifest_path = (
             knowledge_snapshot.manifest_path
             if knowledge_snapshot is not None
@@ -544,3 +551,4 @@ class QARuntime:
 
 
 qa_runtime = QARuntime()
+

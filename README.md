@@ -7,7 +7,7 @@
 <!-- CI 徽章在 P0-3 接入 Actions 后启用 -->
 ![license](https://img.shields.io/badge/license-MIT-blue.svg)
 ![python](https://img.shields.io/badge/python-3.11-3776AB.svg)
-![tests](https://img.shields.io/badge/tests-479%20passed%20%2F%204%20skipped-brightgreen.svg)
+![tests](https://img.shields.io/badge/tests-483%20passed%20%2F%204%20skipped-brightgreen.svg)
 ![status](https://img.shields.io/badge/status-local%20demo%20verified-orange.svg)
 
 ---
@@ -67,43 +67,70 @@ flowchart TD
 
 | 指标 | 数值 | 出处 |
 |---|---|---|
-| 测试 | **479 passed / 4 skipped / 12 subtests** | `pytest -q`（约 14s） |
-| 代码规模 | **213 个 Python 文件**（app 29 / src 46 / tests 79 / scripts 56） | `cloc` 口径 |
+| 测试 | **483 passed / 4 skipped / 12 subtests** | `pytest -q`（约 14s） |
+| 代码规模 | **216 个 Python 文件**（app 30 / src 46 / tests 80 / scripts 57） | `git ls-files` 口径 |
 | 语料规模 | **920 份**业务文件 → **30,406** 检索切块 → **17,957** 张页图 | `docs/baseline/2026-09-29-delivery-audit.md` |
 | 真实模型评测 | 50 题完成 **43 题**（第 44 题预算耗尽） | `output/quality/financial50-live-v1.json` |
 | 延迟 | **p50 30.5s / p95 60.2s** | 同上 |
 | 预算 | 累计 **1,488,843 / 1,500,000** tokens，触发熔断即停 | 预算账本 |
 | 解析兼容率 | **100%**（1,146 个文件的历史评测口径） | 早期评测报告 |
+| 离线评测（示例语料） | Recall@3 **94.7%**、拒答准确率 **100%**、1.68 ms | `eval/results/metrics.json` |
 
 ---
 
 ## 快速开始
 
+> **不需要任何 API Key**：演示模式用 `demo/corpus/` 的示例语料跑通「检索 → 评分 → 拒答 → 引用」。
+
 ```bash
-# 1) 环境（Python 3.11）
+# ① 零依赖演示（2 分钟）
 python -m venv .venv && .venv\Scripts\activate && pip install -r requirements.txt
+set FINANCE_DEMO_MODE=1 && python -m app.main      # 打开 http://127.0.0.1:8000
 
-# 2) 配置：至少填一个模型 Key；不填则进入 Mock 模式（见 docs/PRD.md P0-2）
-copy .env.example .env
+# ② 一键容器（首次构建约 5-10 分钟）
+docker compose -f docker-compose.demo.yml up --build   # 打开 http://127.0.0.1:8002
 
-# 3) 启动（前后端同一个 FastAPI 服务）
-python -m app.main          # 打开 http://127.0.0.1:8001，/api/health 应为 ready=true
+# ③ 接入真实模型（可选）
+copy .env.example .env      # 填 ARK_API_KEY 后 python -m app.main
 ```
 
-**回归测试**（不调用付费 API）：
+**评测复现**（离线，不调用付费 API）：
+
+```bash
+python scripts/eval_demo.py
+# → eval/results/metrics.json + report.md
+```
+
+**回归测试**：
 
 ```bash
 set FINANCE_DISABLE_PAID_API=1
 .venv\Scripts\python.exe -m pytest -q
 ```
 
-**Docker（可选，尚未完成端到端验收）**：
+> 说明：`data/` 下的原始语料与 `output/` 下的知识产物、向量缓存、模型权重不入库，需本地自行准备（见 `.gitignore` 说明）。
+> `docker compose up`（生产形态，含 PostgreSQL）尚未完成端到端验收，不作为演示入口。
+
+---
+
+## 评测（可复现）
 
 ```bash
-docker compose up -d
+python scripts/eval_demo.py
 ```
 
-> 说明：`data/` 下的原始语料与 `output/` 下的知识产物、向量缓存、模型权重不入库，需本地自行准备（见 `.gitignore` 说明）。
+| 指标 | 结果 | 口径 |
+|---|---|---|
+| Recall@3 | **94.7%**（18/19） | 事实题命中金标准切块即算通过 |
+| 拒答准确率 | **100%**（4/4） | 语料外问题必须明确拒答，不许硬编 |
+| 平均耗时 | 1.68 ms | 纯本地词面检索（无向量库、无大模型） |
+| 数据集 | 23 题（19 事实 / 4 拒答） | `eval/dataset.jsonl` |
+
+唯一未命中：**「货币基金保本吗？」** —— 语料原文写的是「不保证本金安全」，词面检索匹配不到「保本」。
+**这正是生产版要接向量检索与重排的原因**，而不是把评测集改到好看。
+
+结果文件随仓库提交：`eval/results/metrics.json`、`eval/results/report.md`；
+换任何机器重跑，数字应当一致。
 
 ---
 
@@ -117,6 +144,8 @@ Financial_QA/
 │   ├── system/         # 多通道检索、RRF、机构过滤、模型适配、预算
 │   └── agent/          # LangGraph 节点、条件边、提示词、持久节点日志
 ├── frontend/           # Vue3：登录、问答、轨迹、原文原图、取消与运维
+├── demo/corpus/        # 演示用示例语料（虚构条款，非真实业务数据）
+├── eval/               # 评测集 + 结果（metrics.json / report.md）
 ├── tests/              # pytest：单测 + 真实 HTTP 验收
 ├── scripts/            # 数据处理、评测、备份、回归
 ├── docs/               # 设计、审计、runbook（26 篇）
@@ -191,4 +220,5 @@ run、事件、LangGraph 检查点与节点结果持久化；恢复时复用已�
 ## License
 
 MIT © 2026 张艳
+
 

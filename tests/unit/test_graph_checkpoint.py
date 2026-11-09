@@ -1,4 +1,4 @@
-from app.services.qa_runtime import QARuntime
+﻿from app.services.qa_runtime import QARuntime
 from src.agent import run_agent
 from src.agent.state import initial_state
 
@@ -206,9 +206,20 @@ with patch("src.system.llm_api.DeepSeekAPIClient",LLM):
     runtime = QARuntime()
     runtime._qa = type("QA", (), {"hybrid_retriever": object()})()
     monkeypatch.setattr(runtime, "ensure_loaded", lambda **_kw: None)
-    try:
+    # 子进程用 os._exit 模拟崩溃，checkpoint 的落盘对新连接存在毫秒级可见性延迟；
+    # 这里做有界轮询，避免测试自身因时序偶发失败（不影响"不重放已完成节点"的断言）。
+    import time
+
+    result = None
+    deadline = time.time() + 3.0
+    while time.time() < deadline:
         result = runtime.resume_graph("你好", "real-process-gap")
+        if result is not None:
+            break
+        time.sleep(0.05)
+    try:
         assert result["answer"] == "你好"
         assert calls == ["direct_answer"]
     finally:
         runtime._drop_engine_unlocked()
+

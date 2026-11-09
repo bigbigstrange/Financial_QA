@@ -1,0 +1,23 @@
+{"id": "q01", "question": "稳盈货币基金A的起购金额是多少？", "type": "factual", "gold": ["01_fund#0"]}
+{"id": "q02", "question": "货币基金赎回资金多久到账？", "type": "factual", "gold": ["01_fund#0", "04_service#0"]}
+{"id": "q03", "question": "交易日15点之后提交的申购什么时候确认？", "type": "factual", "gold": ["01_fund#1"]}
+{"id": "q04", "question": "这只基金的管理费是多少？", "type": "factual", "gold": ["01_fund#2"]}
+{"id": "q05", "question": "货币基金保本吗？", "type": "factual", "gold": ["01_fund#3"]}
+{"id": "q06", "question": "产品风险等级分为几级？", "type": "factual", "gold": ["02_suitability#0"]}
+{"id": "q07", "question": "投资者可以购买高于自身风险等级的产品吗？", "type": "factual", "gold": ["02_suitability#0"]}
+{"id": "q08", "question": "风险测评结果的有效期是多久？", "type": "factual", "gold": ["02_suitability#1"]}
+{"id": "q09", "question": "冷静期是几个小时？", "type": "factual", "gold": ["02_suitability#2"]}
+{"id": "q10", "question": "65周岁以上投资者购买高风险产品有什么要求？", "type": "factual", "gold": ["02_suitability#3"]}
+{"id": "q11", "question": "安享90天的业绩比较基准是多少？", "type": "factual", "gold": ["03_wealth#0"]}
+{"id": "q12", "question": "定期开放产品多久开放一次？", "type": "factual", "gold": ["03_wealth#1"]}
+{"id": "q13", "question": "封闭期内可以赎回吗？", "type": "factual", "gold": ["03_wealth#1"]}
+{"id": "q14", "question": "产品多久披露一次运作报告？", "type": "factual", "gold": ["03_wealth#2"]}
+{"id": "q15", "question": "超额业绩报酬怎么计提？", "type": "factual", "gold": ["03_wealth#3"]}
+{"id": "q16", "question": "赎回资金一直没有到账怎么办？", "type": "factual", "gold": ["04_service#0"]}
+{"id": "q17", "question": "七日年化收益率是什么意思？", "type": "factual", "gold": ["04_service#1"]}
+{"id": "q18", "question": "投诉多久会被受理？", "type": "factual", "gold": ["04_service#2"]}
+{"id": "q19", "question": "密码连续输错会有什么后果？", "type": "factual", "gold": ["04_service#3"]}
+{"id": "q20", "question": "信用卡年费是多少？", "type": "refusal", "gold": []}
+{"id": "q21", "question": "股票开户佣金是多少？", "type": "refusal", "gold": []}
+{"id": "q22", "question": "房贷利率现在多少？", "type": "refusal", "gold": []}
+{"id": "q23", "question": "基金分红需要缴多少税？", "type": "refusal", "gold": []}

@@ -1,0 +1,14 @@
+{
+  "generated_at": "2026-11-09T06:13:05+00:00",
+  "corpus_chunks": 16,
+  "dataset_size": 23,
+  "factual_total": 19,
+  "refusal_total": 4,
+  "top_k": 3,
+  "recall_at_k": 0.9474,
+  "refusal_accuracy": 1.0,
+  "evidence_threshold": 0.35,
+  "avg_latency_ms": 1.68,
+  "passed": 22,
+  "total": 23
+}

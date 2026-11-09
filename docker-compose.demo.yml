@@ -1,0 +1,49 @@
+# 一键演示环境：不接大模型、不接数据库、不需要任何密钥。
+#
+#   docker compose -f docker-compose.demo.yml up --build
+#   打开 http://127.0.0.1:8002  （API 文档 http://127.0.0.1:8002/docs）
+#
+# 说明：
+# - 使用 SQLite，数据文件落在命名卷里，容器重建不丢；
+# - FINANCE_DEMO_MODE=1 时走 app/demo_engine.py，语料来自 demo/corpus/；
+# - 首次构建需要安装 Python 依赖与前端，耗时较长（约 5-10 分钟），之后走缓存。
+
+name: finance-qa-demo
+
+services:
+  demo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: financial-qa:demo
+    environment:
+      APP_ENV: development
+      PORT: "8000"
+      FINANCE_DEMO_MODE: "1"
+      FINANCE_DISABLE_PAID_API: "1"
+      FINANCE_AGENT_MODE: graph
+      DATABASE_URL: sqlite:////app/data_runtime/data_app.db
+      JWT_SECRET: demo-only-secret-please-change-32chars
+      BOOTSTRAP_ADMIN_PASSWORD: demo-admin-2026
+      CORS_ORIGINS: ""
+      HF_HUB_OFFLINE: "1"
+      FINANCE_SKIP_IMAGE: "1"
+      FINANCE_SKIP_GEN: "1"
+    ports:
+      - "127.0.0.1:${DEMO_PORT:-8002}:8000"
+    volumes:
+      - demo_data:/app/data_runtime
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"
+      interval: 15s
+      timeout: 5s
+      start_period: 40s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  demo_data:

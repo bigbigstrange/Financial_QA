@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 from functools import lru_cache
@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     doc_artifact_root: str = str(ROOT / "output" / "phase2")
 
     finance_web_demo: bool = True
+    # 离线演示模式：不依赖大模型/向量库，用示例语料演示检索与拒答链路
+    finance_demo_mode: bool = False
     enable_graph: bool = False
     skip_image: bool = True
     max_blocks: int = 8000
@@ -110,3 +112,4 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+

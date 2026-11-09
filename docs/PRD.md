@@ -1,4 +1,4 @@
-# Financial QA 项目可信度改造 PRD
+﻿# Financial QA 项目可信度改造 PRD
 
 > 面向 Agent 岗求职的「可部署 / 可演示 / 可验证」项目改造方案
 
@@ -363,6 +363,7 @@ jobs:
 | 2026-11-09 | P0-1 仓库清理与门面重写 | ✅ 完成 | 删除 .env / 业务数据；补 MIT LICENSE、.gitignore；README 重写（架构图、关键数字、3 步启动、评测边界） |
 | 2026-11-09 | 同步本地完整版 | ✅ 完成 | 213 个 Python 文件（app 29 / src 46 / tests 79 / scripts 56）；26 篇文档 |
 | 2026-11-09 | 测试可复现 | ✅ 完成 | 新增 `tests/conftest.py` 建临时库；`pytest -q` → **479 passed / 4 skipped** |
-| 2026-11-09 | P0-2 一键启动 + Demo 模式 | ⏳ 待开始 | 需要 docker compose 实跑验收 |
-| 2026-11-09 | P0-3 CI 流水线 | ⏳ 待开始 | 已有 pytest 基线，可直接接 Actions |
-| 2026-11-09 | P1-1 评测体系 | ⏳ 待开始 | 50 题数据集与 eval.py 尚未落库 |
+| 2026-11-09 | P0-2 一键启动 + Demo 模式 | ✅ 完成 | `app/demo_engine.py` + `demo/corpus/` + `docker-compose.demo.yml`；无需 Key 可跑通检索→评分→拒答 |
+| 2026-11-09 | P0-3 CI 流水线 | ✅ 完成 | `.github/workflows/ci.yml`：ruff + pytest + 前端构建 |
+| 2026-11-09 | P1-1 评测体系 | ✅ 完成（示例语料） | `eval/dataset.jsonl` + `scripts/eval_demo.py` + `eval/results/`：Recall@3 94.7% / 拒答 100% |
+
