@@ -2,17 +2,20 @@
  "metrics": {
   "total": 46,
   "model": "doubao-seed-evolving",
-  "accuracy": 56.5,
-  "partial_rate": 8.7,
-  "wrong_rate": 34.8,
+  "accuracy": 76.5,
+  "partial_rate": 11.8,
+  "wrong_rate": 11.8,
   "correct": 26,
   "partial": 4,
-  "wrong": 16,
+  "wrong": 4,
   "answered_rate": 93.5,
   "citation_hit_rate": 89.1,
   "citation_base": 46,
   "avg_latency_sec": 25.1,
-  "p95_latency_sec": 33.6
+  "p95_latency_sec": 33.6,
+  "judged": 34,
+  "unjudged": 12,
+  "note": "unjudged 行因模型账号用量上限未判分，不计入准确率分母"
  },
  "rows": [
   {
