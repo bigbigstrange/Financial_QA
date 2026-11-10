@@ -1,0 +1,28 @@
+{
+  "total": 46,
+  "judged": 34,
+  "unjudged": 12,
+  "correct": 26,
+  "partial": 4,
+  "wrong": 4,
+  "accuracy_on_judged": 76.5,
+  "partial_on_judged": 11.8,
+  "wrong_on_judged": 11.8,
+  "citation_hit_rate": 89.1,
+  "citation_hits": 41,
+  "verified_rate": 93.5,
+  "unjudged_ids": [
+    "k013",
+    "k038",
+    "k039",
+    "k040",
+    "k043",
+    "k044",
+    "k045",
+    "k046",
+    "k047",
+    "k048",
+    "k049",
+    "k050"
+  ]
+}
