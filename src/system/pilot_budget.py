@@ -95,6 +95,13 @@ class PilotBudget:
             )
             db.commit()
 
+    @staticmethod
+    def _same_model(requested: str, actual: str) -> bool:
+        """Ark 会返回带版本后缀的模型名（如 -latest-version），按前缀兼容。"""
+        if actual == requested:
+            return True
+        return actual.startswith(requested + "-") or requested.startswith(actual + "-")
+
     def settle(self, request_id: str, response: ModelResponse, node: str) -> None:
         valid_usage = all(
             isinstance(value, int) and value >= 0
@@ -103,7 +110,10 @@ class PilotBudget:
         if valid_usage:
             valid_usage = (response.prompt_tokens > 0 and
                            response.total_tokens >= response.prompt_tokens + response.completion_tokens)
-        valid_model = response.provider == "ark" and response.actual_model == self.model
+        valid_model = (
+            response.provider == "ark"
+            and self._same_model(self.model, response.actual_model or "")
+        )
         if not valid_usage or not valid_model:
             self.stop(request_id, "usage_invalid" if not valid_usage else "model_mismatch")
             code = ErrorCode.MODEL_RESPONSE_INVALID

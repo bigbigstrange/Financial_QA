@@ -48,8 +48,16 @@ class DeepSeekAPIClient:
                              "https://ark.cn-beijing.volces.com/api/v3").rstrip("/")
             self.model = (model or os.environ.get("ARK_MODEL") or
                           "doubao-seed-2-1-pro-260915").strip()
-            if self.model != "doubao-seed-2-1-pro-260915":
-                raise ValueError("只允许已批准的 Ark 试跑模型")
+            approved = {
+                "doubao-seed-2-1-pro-260915",
+                "doubao-seed-evolving",
+            }
+            extra = os.environ.get("ARK_APPROVED_MODELS") or ""
+            approved.update(m.strip() for m in extra.split(",") if m.strip())
+            if self.model not in approved:
+                raise ValueError(
+                    "只允许已批准的 Ark 试跑模型（可用 ARK_APPROVED_MODELS 扩展）"
+                )
             if self.base_url != "https://ark.cn-beijing.volces.com/api/v3":
                 raise ValueError("Ark 试跑只允许官方 API 地址")
         else:

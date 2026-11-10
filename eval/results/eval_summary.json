@@ -1,0 +1,28 @@
+{
+  "judge_model": "doubao-seed-evolving",
+  "overall": {
+    "total": 50,
+    "correct": 4,
+    "partial": 12,
+    "accuracy": 8.0,
+    "partial_rate": 24.0,
+    "refusal_rate": 44.0
+  },
+  "covered": {
+    "total": 6,
+    "correct": 2,
+    "partial": 1,
+    "accuracy": 33.3,
+    "partial_rate": 16.7,
+    "refusal_rate": 16.7
+  },
+  "uncovered": {
+    "total": 44,
+    "correct": 2,
+    "partial": 11,
+    "accuracy": 4.5,
+    "partial_rate": 25.0,
+    "refusal_rate": 47.7
+  },
+  "note": "covered 考察准确率；uncovered 考察是否在无依据时拒答"
+}

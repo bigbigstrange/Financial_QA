@@ -367,7 +367,7 @@ jobs:
 | P0-2 | 一键启动 + Demo 模式 | ✅ | 镜像构建通过；容器 healthy；登录后提问返回 `verified=true` 与引用；语料外问题正确拒答（`docker-compose.demo.yml`，端口 8002） |
 | P0-3 | CI 流水线 | ✅ | ruff + pytest + 前端构建；三次全绿；失败写 check-run 注解；新增覆盖率门槛与 coverage.xml 上传 |
 | P0-4 | 演示数据包 | 🟡 | 4 篇示例语料（16 切块）；预构建索引未提供（演示模式不需要） |
-| P1-1 | 评测体系 | 🟡 | 示例语料 23 题（Recall@3 94.7% / 拒答 100%）；新增**题库级运行指标** harness（500 题题库）；**准确率仍缺人工标注** |
+| P1-1 | 评测体系 | ✅ | 示例语料 23 题（Recall@3 94.7%）+ 50 题人工标注 + 真实模型跑批 + LLM 裁判（准确率 8%，其中库内题 33.3%）；已交叉分析知识库覆盖（仅 6/50 题有依据） |
 | P1-2 | 迭代上限与超时 | ✅ | 在 Agentic RAG v3 落地：`MAX_ITERATIONS=2`（状态计数）、`graph/runtime.py` 墙钟超时、显式 `recursion_limit`；新增 4 条测试 |
 | P1-3 | 过程证据包 | ✅ | 5 类齐全：架构图 / 评测图 / 终端 GIF / **真实节点时序图** / **CI 状态卡**（后两者由脚本读真实数据生成） |
 | P2-1 | 可观测 | 🟡 | 新增 `scripts/export_langfuse.py`（trace → Langfuse ingestion，dry-run 通过）；未接真实 Langfuse 实例 |
@@ -392,9 +392,10 @@ jobs:
 
 ### 下一批优先级
 
-1. **P0-2 验收**：完成 `docker compose -f docker-compose.demo.yml up --build` 实跑（当前构建超时）
+1. **从知识库文档重新出 50 题**（当前题库与 KB 不同源，是准确率偏低的主因）`n2. **P0-2 验收**：完成 `docker compose -f docker-compose.demo.yml up --build` 实跑（当前构建超时）
 2. **P1-3**：补 trace 时序图与 CI 截图（README 首屏 5 类证据齐）
 3. **P2-1 可观测** / **P2-3 v3 独立化**
 4. **P3** 视频与文章
 5. 若拿到人工标注的 50 题，再补"准确率"评测
+
 

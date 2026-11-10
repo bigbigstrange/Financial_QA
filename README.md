@@ -151,6 +151,28 @@ python scripts/eval_demo.py
 结果文件随仓库提交：`eval/results/metrics.json`、`eval/results/report.md`；
 换任何机器重跑，数字应当一致。
 
+### 真实模型评测（50 题人工标注）
+
+用真实模型跑完 50 题人工标注集，LLM 裁判（`doubao-seed-evolving`，temperature=0）逐题打分：
+
+| 分组 | 题数 | 准确率 | 部分正确 | 拒答率 |
+|---|---|---|---|---|
+| 全部 | 50 | 8.0% | 24.0% | 44.0% |
+| **库内有依据**（考察答得对） | 6 | **33.3%** | 16.7% | 16.7% |
+| **库内无依据**（考察该拒答） | 44 | — | — | **47.7%** |
+
+**必须先看这一条**：这 50 题与当前知识库**不同源**——只有 6 题的关键事实能在 30,406 个切块里查到。
+所以 8% 不是"系统准确率"，而是"题库与知识库错配"的结果。
+
+- 库内无依据时，正确行为是拒答；当前拒答率 47.7%，**说明还有一半该拒没拒**，这是下一版要修的。
+- 库内有依据的 6 题准确率 33.3%，样本太小，不能当总体指标。
+
+完整逐题判定：[docs/eval-report.md](docs/eval-report.md)。
+
+> 这一步的价值不在分数，而在**流程**：人工标注 → 真实模型跑批 → LLM 裁判 → 与知识库覆盖交叉分析。
+> 下一个迭代应该是**从知识库文档出题**，而不是继续用这份不同源的题库。
+
+
 ---
 
 ## MCP Server（可被任何 Agent 客户端调用）
@@ -235,13 +257,12 @@ GitHub Actions API 生成，**不是截图**，所以不会过期。
 ## 可观测（可选）
 
 ```bash
-# 把一次 run 的 trace 转成 Langfuse ingestion 格式（默认 dry-run）
-python scripts/export_langfuse.py --trace trace.json --dry-run
-
-# 配好 LANGFUSE_HOST / LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY 后实际发送
-python scripts/export_langfuse.py --trace trace.json
+# 把一次 run 的 trace 导出到 Langfuse（v4 OTLP，官方 SDK）
+python scripts/export_langfuse.py --trace trace.json \
+  --env-file .langfuse.env    # 内含 LANGFUSE_BASE_URL / PUBLIC_KEY / SECRET_KEY
 ```
 
+已实测：一次 8 节点的真实问答成功写入 Langfuse Cloud（trace id 见脚本输出）。
 不依赖 Langfuse 也能跑：仓库自带 `docs/evidence/trace.png` 与 `/api/runs/{id}/trace` 接口。
 
 ---
